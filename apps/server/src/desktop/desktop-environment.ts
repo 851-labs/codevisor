@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import {
@@ -6,7 +7,7 @@ import {
   SCREEN_SHARING_CONFIG_FILE
 } from "../routes/screen-sharing-vnc.js"
 import { desktopIsUp, type DesktopProcesses, type LocateSocket } from "./desktop-liveness.js"
-import { type DesktopSystem, systemDesktopSystem } from "./desktop-system.js"
+import { type DesktopSystem, processAlive } from "./desktop-system.js"
 
 export type LaunchEnvironment = (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
 
@@ -17,12 +18,11 @@ export interface DesktopEnvironmentOptions {
 }
 
 export const desktopEnvironment = (options: DesktopEnvironmentOptions): LaunchEnvironment => {
-  const system = options.system ?? systemDesktopSystem()
+  const system = options.system ?? thisMachine
   if (system.platform !== "linux") return (env) => env
 
   const config = join(options.dataDir, SCREEN_SHARING_CONFIG_FILE)
-  const ownDisplay = (): DesktopDisplay | undefined =>
-    runningDesktop(system, config, options.locate)
+  const ownDisplay = (): DesktopDisplay | undefined => runningDesktop(system, config, options)
   return (env) => {
     const from = whoseDisplay(env, config)
     if (from === "chosen") return env
@@ -51,7 +51,7 @@ const codevisorsOwn = new Set(["DISPLAY", "XAUTHORITY", DISPLAY_MARK, CONFIG_MAR
 const runningDesktop = (
   system: DesktopProcesses,
   configPath: string,
-  locate: LocateSocket | undefined
+  { dataDir, locate }: DesktopEnvironmentOptions
 ): DesktopDisplay | undefined => {
   const text = system.readText(configPath)
   if (text === undefined || recordedDesktopService(text) === undefined) return undefined
@@ -61,7 +61,7 @@ const runningDesktop = (
 
   const { display, xauthority, socket } = setup.config
   if (display === undefined || xauthority === undefined) return undefined
-  if (!desktopIsUp(system, socket, locate)) return undefined
+  if (!desktopIsUp(system, { dataDir, socket }, locate)) return undefined
 
   return { DISPLAY: `:${display}`, XAUTHORITY: xauthority }
 }
@@ -83,4 +83,16 @@ const withoutCodevisorsDisplay = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => 
   if (!isCodevisorsDisplay(env)) return env
 
   return Object.fromEntries(Object.entries(env).filter(([name]) => !codevisorsOwn.has(name)))
+}
+
+const thisMachine: DesktopProcesses & Pick<DesktopSystem, "platform"> = {
+  platform: process.platform,
+  processAlive,
+  readText: (path) => {
+    try {
+      return readFileSync(path, "utf8")
+    } catch {
+      return undefined
+    }
+  }
 }

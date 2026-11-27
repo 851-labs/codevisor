@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
+import { setTimeout as wait } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
@@ -71,6 +72,9 @@ interface ResumedDesktop {
   readonly desktopResumed: Promise<void>
 }
 
+const desktopResumeLimitMs = 15_000
+const unreferenced = { ref: false }
+
 const noLinuxDesktop: ResumedDesktop = { desktop: undefined, desktopResumed: Promise.resolve() }
 
 const linuxDesktop = (dataDir: string, desktops: VNCDesktops): ResumedDesktop => {
@@ -92,10 +96,11 @@ const linuxDesktop = (dataDir: string, desktops: VNCDesktops): ResumedDesktop =>
     },
     changed: () => desktops.relays?.recheck()
   })
-  const desktopResumed = manager
-    .resume()
-    .then(manager.waitUntilUp)
-    .catch(() => undefined)
+  const resumed = manager.resume().catch(() => undefined)
+  const desktopResumed = Promise.race([
+    resumed,
+    wait(desktopResumeLimitMs, undefined, unreferenced)
+  ])
   return { desktop: manager, desktopResumed }
 }
 export const canReadFolder = async (path: string): Promise<boolean> => {

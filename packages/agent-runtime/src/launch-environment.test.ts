@@ -54,6 +54,25 @@ describe("the environment a harness is launched with", () => {
     ])
   })
 
+  it("waits for a launch environment that isn't ready yet", async () => {
+    const desktop = Promise.withResolvers<void>()
+    const { launches, start } = launchingHarness({
+      env: { PATH: "/bin" },
+      launchEnvironment: async (env) => {
+        await desktop.promise
+        return { ...env, DISPLAY: ":1" }
+      }
+    })
+
+    const started = start("/work")
+    expect(launches).toEqual([])
+
+    desktop.resolve()
+    await started
+
+    expect(launches).toEqual([{ PATH: "/bin", DISPLAY: ":1" }])
+  })
+
   it("starts from the machine's environment when folders have none of their own", async () => {
     const { launches, start } = launchingHarness({
       env: { PATH: "/bin" },

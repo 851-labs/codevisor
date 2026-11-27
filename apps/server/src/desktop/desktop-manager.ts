@@ -38,7 +38,6 @@ export interface DesktopManager {
   readonly start: (options?: StartOptions) => Promise<DesktopStatus>
   readonly remove: (options?: RemoveOptions) => Promise<DesktopStatus>
   readonly resume: () => Promise<void>
-  readonly waitUntilUp: () => Promise<void>
 }
 
 export interface RemoveOptions {
@@ -57,6 +56,8 @@ export interface DesktopManagerOptions {
   readonly changed: () => void
   readonly locate?: (configured: string) => PrivateSocket
 }
+
+type Resumed = "coming-up" | "not-coming"
 
 interface Shared {
   readonly state: DesktopState
@@ -136,7 +137,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     if (runs.kind === "process" && recordedService() === "process" && !runs.isSetUp())
       return "the desktop's process isn't running"
 
-    return whyDesktopIsDown(system, setup.config.socket, locate)
+    return whyDesktopIsDown(system, { dataDir, socket: setup.config.socket }, locate)
   }
 
   const sharedBy = (runs: DesktopService, other: DesktopService): Shared => {
@@ -296,7 +297,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
     for (let poll = 0; poll < startPolls && steady < steadyPolls; poll += 1) {
-      steady = desktopIsUp(system, layout.socket, locate) ? steady + 1 : 0
+      const isUp = desktopIsUp(system, { dataDir, socket: layout.socket }, locate)
+      steady = isUp ? steady + 1 : 0
       await system.sleep(startPollMs)
     }
     return steady >= steadyPolls
@@ -372,20 +374,29 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return status()
   }
 
-  const resume = async (): Promise<void> => {
+  const resume = async (): Promise<Resumed> => {
     const { current: runs, other } = await services()
     await runs.refresh()
     const recorded = recordedService()
-    if (recorded === undefined || setUp().kind !== "ready") return
-    if (runs.isSetUp() || other.isSetUp() || runs.belongsToAnother()) return
-    if (recorded === "process" || runs.kind === "systemd-user") await startUnder(runs, other)
+    if (recorded === undefined || setUp().kind !== "ready") return "not-coming"
+    if (runs.belongsToAnother()) return "not-coming"
+    if (runs.isSetUp()) return "coming-up"
+    if (other.isSetUp()) return other.kind === "process" ? "coming-up" : "not-coming"
+    if (recorded !== "process" && runs.kind !== "systemd-user") return "not-coming"
+
+    await startUnder(runs, other)
+    return "coming-up"
+  }
+
+  const resumeAndWait = async (): Promise<void> => {
+    if ((await oneAtATime(resume)) === "coming-up") await waitUntilUp()
   }
 
   const isStillComingUp = (): boolean => {
     const setup = setUp()
     if (setup.kind !== "ready" || recordedService() === undefined) return false
 
-    return !desktopIsUp(system, setup.config.socket, locate)
+    return !desktopIsUp(system, { dataDir, socket: setup.config.socket }, locate)
   }
 
   const waitUntilUp = async (): Promise<void> => {
@@ -399,7 +410,6 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     replaceOld: () => unlessBusy(replaceOld),
     start: (asked = {}) => unlessBusy(() => start(asked)),
     remove: (asked = {}) => unlessBusy(() => remove(asked)),
-    resume: () => oneAtATime(resume),
-    waitUntilUp
+    resume: resumeAndWait
   }
 }

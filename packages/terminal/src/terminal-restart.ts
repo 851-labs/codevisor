@@ -20,37 +20,35 @@ export interface RestartContext {
 export const restartTerminal = (
   context: RestartContext,
   terminal: RunningTerminal,
-  launch: RestartLaunch
+  prepare: () => RestartLaunch
 ): void => {
   const queued = makeQueuedProcess()
   context.attachSession(terminal)
   terminal.process = queued
-  terminal.resumeToken = launch.request.resumeToken
   context.pushFrame(terminal, { type: "output", data: restartPreamble(terminal.screen.state()) })
 
-  const start = (): void => startRestartedProcess(context, terminal, launch, queued)
+  const start = (): void => startRestartedProcess(context, terminal, prepare, queued)
   if (context.after === undefined) start()
-  else void context.after.then(start, start)
+  else void context.after.then(start, start).catch(() => endRestart(context, terminal))
 }
 
 const startRestartedProcess = (
   context: RestartContext,
   terminal: RunningTerminal,
-  launch: RestartLaunch,
+  prepare: () => RestartLaunch,
   queued: QueuedProcess
 ): void => {
-  if (terminal.closed) {
-    launch.discard()
-    return
-  }
+  if (terminal.closed) return
 
+  const launch = prepare()
+  terminal.resumeToken = launch.request.resumeToken
   const spawned = context.spawner.spawn(
     launch.request,
     restartedHandlers(context, terminal, launch)
   )
   void Effect.runPromise(spawned).then(
     (process) => adoptRestartedProcess(terminal, queued, process),
-    () => endRestart(context, terminal, launch, undefined)
+    () => endRestart(context, terminal, launch)
   )
 }
 
@@ -66,10 +64,11 @@ const restartedHandlers = (
 const endRestart = (
   context: RestartContext,
   terminal: RunningTerminal,
-  launch: RestartLaunch,
-  exitCode: number | undefined
+  launch?: RestartLaunch,
+  exitCode?: number
 ): void => {
-  launch.discard()
+  launch?.discard()
+  terminal.restoring = undefined
   context.pushFrame(
     terminal,
     exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode }
@@ -87,6 +86,7 @@ const adoptRestartedProcess = (
     return
   }
   terminal.process = process
+  terminal.restoring = undefined
   process.resize(terminal.sizes.size.cols, terminal.sizes.size.rows)
   queued.replayInto(process)
 }

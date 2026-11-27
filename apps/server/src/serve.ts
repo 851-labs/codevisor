@@ -272,7 +272,7 @@ export const runServe = (
         return shellEnv.refresh()
       },
       resolveDirectoryEnv: directoryEnv.current,
-      launchEnvironment: withDesktop
+      launchEnvironment: (env) => desktopResumed.then(() => withDesktop(env))
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined

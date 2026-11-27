@@ -29,7 +29,6 @@ const recordingManager = (overrides: Partial<DesktopManager> = {}) => {
     start: answer("start", "running"),
     remove: answer("remove", "none"),
     resume: async () => undefined,
-    waitUntilUp: async () => undefined,
     ...overrides
   }
   return { manager, calls }

@@ -8,8 +8,7 @@ const config = `${dataDir}/screen-sharing.json`
 const socket = "/run/user/1001/codevisor-desktop.sock"
 const cookie = "/run/user/1001/codevisor-desktop.xauth"
 const runner = 4243
-const runnerCommand =
-  "/opt/codevisor/bin/node\0/opt/codevisor/cli.js\0desktop\0run\0--data-dir\0/d\0"
+const runnerCommand = `/opt/node\0/opt/codevisor/cli.js\0desktop\0run\0--data-dir\0${dataDir}\0`
 
 const managed = (display: number): string =>
   JSON.stringify({

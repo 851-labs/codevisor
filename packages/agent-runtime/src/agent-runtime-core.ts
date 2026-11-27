@@ -60,7 +60,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     },
     envFor: async (cwd) => {
       const env = await (config.resolveDirectoryEnv?.(cwd) ?? state.currentEnv)
-      return config.launchEnvironment?.(env) ?? env
+      return (await config.launchEnvironment?.(env)) ?? env
     },
     executableExists,
     locateExecutable

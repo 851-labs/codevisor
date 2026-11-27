@@ -18,7 +18,7 @@ import { ReplayBuffer } from "./replay-buffer.js"
 import { resolveUserId } from "./shell.js"
 import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
 import { makeTerminalLaunch, spawnerWithLaunchEnvironment } from "./terminal-launch.js"
-import { restartLaunchFor } from "./terminal-restart-launch.js"
+import { restartableLaunch, restartLaunchFor } from "./terminal-restart-launch.js"
 import { restartTerminal } from "./terminal-restart.js"
 import { makeTerminalResume } from "./terminal-resume.js"
 import { createTerminalScreen, replayCovers, resyncFrames } from "./terminal-screen.js"
@@ -349,7 +349,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       version: 4,
       terminals: [...terminals.values()]
         .filter((terminal) => terminal.external || !terminal.closed)
-        .map((terminal) => snapshotEntry(terminal, resume.saved(terminal)))
+        .map((terminal) => snapshotEntry(terminal, resume.saved(terminal) ?? terminal.restoring))
     }),
     readScreen: (terminalId, format) =>
       terminalAttempt("readScreen", () => {
@@ -363,7 +363,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       for (const entry of snapshot.terminals) {
         if (terminals.has(entry.terminalId)) continue
         if (entry.external && snapshot.version < 3) continue
-        const restart = restartLaunchFor(entry, prepareSpawn, userId)
+        const restart = restartableLaunch(entry)
         const size = restoredSize(entry)
         const terminal: RunningTerminal = {
           terminalId: entry.terminalId,
@@ -385,8 +385,12 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
         restoreEntry(terminal, entry)
         terminals.set(entry.terminalId, terminal)
-        if (restart !== undefined) restartTerminal(restartContext, terminal, restart)
-        else if (!entry.closed) pushFrame(terminal, { type: "exit" })
+        if (restart !== undefined) {
+          terminal.restoring = entry.resume
+          restartTerminal(restartContext, terminal, () =>
+            restartLaunchFor(entry, restart, prepareSpawn, userId)
+          )
+        } else if (!entry.closed) pushFrame(terminal, { type: "exit" })
         if (entry.external && !terminalsBySession.has(entry.sessionId)) {
           terminalsBySession.set(entry.sessionId, entry.terminalId)
         }

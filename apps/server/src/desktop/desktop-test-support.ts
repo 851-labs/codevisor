@@ -130,7 +130,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     readText: (path) => {
       if (path.endsWith(".ready")) return readyMark()
       if (path === `/proc/${SESSION_RUNNER}/cmdline`)
-        return [RUNNER.program, ...RUNNER.args].join("\0")
+        return [RUNNER.program, ...RUNNER.args, ""].join("\0")
 
       return files.get(path)
     },

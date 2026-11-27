@@ -6,28 +6,34 @@ export type LocateSocket = (configured: string) => PrivateSocket
 
 export type DesktopProcesses = Pick<DesktopSystem, "readText" | "processAlive">
 
+export interface OwnDesktop {
+  readonly dataDir: string
+  readonly socket: string
+}
+
 export const desktopIsUp = (
   system: DesktopProcesses,
-  socket: string,
+  desktop: OwnDesktop,
   locate: LocateSocket = privateSocket
-): boolean => whyDesktopIsDown(system, socket, locate) === undefined
+): boolean => whyDesktopIsDown(system, desktop, locate) === undefined
 
 export const whyDesktopIsDown = (
   system: DesktopProcesses,
-  socket: string,
+  desktop: OwnDesktop,
   locate: LocateSocket = privateSocket
 ): string | undefined => {
-  const found = locate(socket)
+  const found = locate(desktop.socket)
   if (found.problem !== undefined) return found.detail
 
-  return sessionRunnerIsAlive(system, socket) ? undefined : "the desktop's session isn't up"
+  return ownRunnerIsAlive(system, desktop) ? undefined : "the desktop's session isn't up"
 }
 
-const sessionRunnerIsAlive = (system: DesktopProcesses, socket: string): boolean => {
-  const runner = Number(system.readText(readyMarkOf(socket))?.trim() ?? "")
+const ownRunnerIsAlive = (system: DesktopProcesses, desktop: OwnDesktop): boolean => {
+  const runner = Number(system.readText(readyMarkOf(desktop.socket))?.trim() ?? "")
   if (!Number.isInteger(runner) || runner <= 0 || !system.processAlive(runner)) return false
 
-  return system.readText(`/proc/${runner}/cmdline`)?.includes(runnerArguments) === true
+  const commandLine = system.readText(`/proc/${runner}/cmdline`)
+  return commandLine?.includes(runnerOf(desktop.dataDir)) === true
 }
 
-const runnerArguments = "\0desktop\0run\0"
+const runnerOf = (dataDir: string): string => `\0desktop\0run\0--data-dir\0${dataDir}\0`

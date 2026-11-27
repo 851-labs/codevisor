@@ -36,14 +36,15 @@ export interface QueuedProcess extends TerminalProcess {
   readonly replayInto: (process: TerminalProcess) => void
 }
 
+export const restartableLaunch = (entry: TerminalSnapshotEntry): TerminalLaunch | undefined =>
+  entry.closed || entry.external ? undefined : entry.launch
+
 export const restartLaunchFor = (
   entry: TerminalSnapshotEntry,
+  launch: TerminalLaunch,
   prepareSpawn: PrepareSpawn,
   userId: number | undefined
-): RestartLaunch | undefined => {
-  const launch = entry.launch
-  if (entry.closed || entry.external || launch === undefined) return undefined
-
+): RestartLaunch => {
   const restart = { entry, launch, prepareSpawn }
   return programRestart(restart, entry.resume, userId) ?? shellRestart(restart)
 }
