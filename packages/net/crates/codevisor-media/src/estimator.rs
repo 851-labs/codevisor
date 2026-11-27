@@ -177,6 +177,15 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
+    #[cfg(test)]
+    pub fn lost_bytes(&self) -> usize {
+        self.lost.bytes
+    }
+
+    pub fn take_back_lost(&mut self, bytes: usize) {
+        self.lost.take_back(bytes);
+    }
+
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
         let trusted = Duration::from_secs_f64(TRUSTED_SPAN_JITTERS * self.jitter_us / 1e6).max(MIN_SPAN);
         if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
@@ -357,6 +366,18 @@ impl Throughput {
         }
         self.entries.push_back((now, bytes));
         self.bytes += bytes;
+    }
+
+    fn take_back(&mut self, mut bytes: usize) {
+        for (_, entry) in self.entries.iter_mut().rev() {
+            let taken = bytes.min(*entry);
+            *entry -= taken;
+            self.bytes -= taken;
+            bytes -= taken;
+            if bytes == 0 {
+                break;
+            }
+        }
     }
 
     fn bps(&self) -> Option<f64> {

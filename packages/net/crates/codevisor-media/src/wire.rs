@@ -282,16 +282,17 @@ impl Feedback {
         };
         let late_at = FEEDBACK_BYTES + if ltr_token.is_some() { LTR_BYTES } else { 0 };
         let late_originals = if flags & FLAG_LATE_ORIGINALS != 0 {
-            let len = usize::from(*datagram.get(late_at)?);
-            if len > MAX_LATE_RANGES {
-                return None;
+            let kept = datagram.get(late_at).map_or(0, |len| usize::from(*len).min(MAX_LATE_RANGES));
+            match datagram.get(late_at + 1..late_at + 1 + kept * LATE_RANGE_BYTES) {
+                Some(ranges) => {
+                    let mut late = LateOriginals { len: kept as u8, ..LateOriginals::default() };
+                    for (slot, range) in late.ranges.iter_mut().zip(ranges.as_chunks::<LATE_RANGE_BYTES>().0) {
+                        *slot = (u16::from_be_bytes([range[0], range[1]]), u16::from_be_bytes([range[2], range[3]]));
+                    }
+                    late
+                }
+                None => LateOriginals::default(),
             }
-            let ranges = datagram.get(late_at + 1..late_at + 1 + len * LATE_RANGE_BYTES)?;
-            let mut late = LateOriginals { len: len as u8, ..LateOriginals::default() };
-            for (slot, range) in late.ranges.iter_mut().zip(ranges.as_chunks::<LATE_RANGE_BYTES>().0) {
-                *slot = (u16::from_be_bytes([range[0], range[1]]), u16::from_be_bytes([range[2], range[3]]));
-            }
-            late
         } else {
             LateOriginals::default()
         };
@@ -537,6 +538,30 @@ mod tests {
             assert_eq!(Feedback::decode(&none), Some(late(&[], token)));
             assert_eq!(Feedback::decode(&some), Some(late(&tail, token)));
         }
+    }
+
+    #[test]
+    fn feedback_naming_more_late_ranges_than_the_host_keeps_still_decodes_with_the_first_eight() {
+        let first_eight: Vec<u16> = (0..8).map(|index| index * 2).collect();
+        let mut nine = BytesMut::from(&late(&first_eight, None).encode()[..]);
+        let count_at = FEEDBACK_BYTES;
+        nine[count_at] = 9;
+        nine.put_u16(40);
+        nine.put_u16(1);
+
+        let decoded = Feedback::decode(&nine).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
+
+        assert_eq!(decoded, Some(LateOriginals::from_indices(first_eight)));
+    }
+
+    #[test]
+    fn feedback_cut_short_inside_its_late_ranges_still_decodes_without_them() {
+        let encoded = late(&[3, 4, 9], None).encode();
+        let short = &encoded[..encoded.len() - 2];
+
+        let decoded = Feedback::decode(short).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
+
+        assert_eq!(decoded, Some(LateOriginals::default()));
     }
 
     #[test]

@@ -159,8 +159,12 @@ no jitter buffer and no queue deeper than one frame.
     0.1%, the cut threw the measured rate away and the estimate fell to the next small sample, about 3 Mbit/s, for the
     rest of the run (16 traced local runs, 5 of 8 collapsed on main). The count only misses late originals (a copy
     later than that counts as the resend), so it can hide a real loss only if the round trip falls below half its
-    session low. An older viewer sends no count and
-    the host counts as before; an older host ignores the flag and the two bytes.
+    session low. A taken-back packet also comes off the estimator's lost bytes, and when every loss of the frame that
+    last set the FEC trigger is taken back, the trigger goes back to what it was before. The frame's last packet isn't
+    charged when a tail probe's copy of it is on its way, since that copy can arrive early. A frame resolved by a later
+    frame's report keeps what it was charged until its own report arrives. Feedback naming more than eight ranges keeps
+    the first eight, and feedback cut short inside them keeps none, rather than being dropped. An older viewer sends no
+    ranges and the host counts as before; an older host ignores the flag and the bytes after it.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
     cleared. When the receive rate is under half the estimate and the viewer received at least 75% of what was sent
@@ -305,7 +309,7 @@ Feedback (kind 2, viewer to host), one per resolved frame and per LTR acknowledg
 | 12..16 | lost bitmap: bit `i` set means frame `resolved_below - 1 - i` was given up                                                                                |
 | 16..36 | receipt: first arrival (u64 µs), last first-time arrival and completion (u32 µs after it), bytes that arrived the first time after the first packet (u32) |
 | 36..44 | the newest LTR token the viewer's decoder acknowledged on this stream (optional)                                                                          |
-| then   | late originals (u16, optional): packets of the frame the viewer asked for whose first copy came before a resend could have                                |
+| then   | late originals (optional): a range count (u8, at most 8 kept), then `(first index, count)` pairs of u16                                                   |
 
 NACK (kind 3): the frame (u32), a range count (u16, at most 64), then `(first index, count)` pairs of u16. A count of
 `0xFFFF` asks for every data packet of a frame the viewer never saw.
