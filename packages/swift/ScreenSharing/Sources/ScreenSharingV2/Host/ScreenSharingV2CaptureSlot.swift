@@ -3,6 +3,7 @@ struct ScreenSharingV2CaptureSlot {
   private(set) var waitingTiles: Set<Int>
   private(set) var smallTiles: Set<Int> = []
   private(set) var lastEncoded: ScreenSharingV2Capture?
+  private(set) var waitingRepeatsLastEncoded = false
 
   init(tiles: Set<Int>) {
     waitingTiles = tiles
@@ -13,6 +14,7 @@ struct ScreenSharingV2CaptureSlot {
   ) -> Bool {
     defer {
       waiting = capture
+      waitingRepeatsLastEncoded = false
       waitingTiles.formUnion(tiles)
       smallTiles = smallTiles.subtracting(changedAgain).subtracting(tiles).union(small)
     }
@@ -21,6 +23,7 @@ struct ScreenSharingV2CaptureSlot {
 
   mutating func encoding(_ capture: ScreenSharingV2Capture) {
     waiting = nil
+    waitingRepeatsLastEncoded = false
     waitingTiles = []
     smallTiles = []
     lastEncoded = capture
@@ -29,6 +32,7 @@ struct ScreenSharingV2CaptureSlot {
   mutating func requeue(tiles: Set<Int>) {
     guard let capture = waiting ?? lastEncoded else { return }
 
+    waitingRepeatsLastEncoded = waiting == nil || waitingRepeatsLastEncoded
     waiting = capture
     waitingTiles.formUnion(tiles)
     smallTiles.subtract(tiles)
@@ -36,6 +40,7 @@ struct ScreenSharingV2CaptureSlot {
 
   mutating func clear() {
     waiting = nil
+    waitingRepeatsLastEncoded = false
     waitingTiles = []
     smallTiles = []
     lastEncoded = nil

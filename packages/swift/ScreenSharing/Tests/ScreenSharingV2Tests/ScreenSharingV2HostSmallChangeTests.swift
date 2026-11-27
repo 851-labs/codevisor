@@ -24,7 +24,7 @@ struct ScreenSharingV2HostSmallChangeTests {
 
     #expect(encoder.requests.map(\.update.isRefinement) == [false, true, false, false])
     #expect(encoder.requests.map(\.smallTiles) == [[], [], [0], []])
-    #expect(metrics.counter("tilesChangedSmall") == 1)
+    #expect(metrics.counter("smallChangeRequests") == 1)
   }
 
   @Test func anEncoderThatDoesNotKeepItsCapIsNeverToldAChangeIsSmall() async throws {
@@ -36,7 +36,7 @@ struct ScreenSharingV2HostSmallChangeTests {
     await encoder.encodes.cancellableWait(for: 3)
 
     #expect(encoder.requests.map(\.smallTiles) == [[], [], []])
-    #expect(metrics.counter("tilesChangedSmall") == 0)
+    #expect(metrics.counter("smallChangeRequests") == 0)
   }
 
   @Test func aSmallChangeThatAlsoRefreshesItsTileIsNotSmall() async throws {
@@ -57,7 +57,7 @@ struct ScreenSharingV2HostSmallChangeTests {
     #expect(encoder.requests[2].sourceTimestampNs == 2_000)
     #expect(encoder.requests[2].refreshes == [0: .keyframe])
     #expect(encoder.requests[2].smallTiles.isEmpty)
-    #expect(metrics.counter("tilesChangedSmall") == 0)
+    #expect(metrics.counter("smallChangeRequests") == 0)
   }
 
   private func sharpened(_ encoder: RecordingTileEncoder) async throws -> ScreenSharingV2Host {

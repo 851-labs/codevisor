@@ -45,19 +45,13 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     let status = session.encode(
       pixels, submission: submission.id, presentationNs: submission.presentationNs,
       options: options(refresh: submission.refresh).dictionary)
-    guard status != noErr else { return noteKeptCap(submission) }
+    guard status != noErr else { return }
 
     state.withLock {
       $0.abandon(submission)
       $0.failure = $0.failure ?? "encode status \(status)"
     }
     throw ScreenSharingError.codec("Encode VCP tile \(tile)", status)
-  }
-
-  private func noteKeptCap(_ submission: ScreenSharingVCPSubmission) {
-    guard !submission.update.isRefinement, submission.highestQP < ScreenSharingVCPRate.highestFrameQP else { return }
-
-    metrics.increment("changesKeptSharp")
   }
 
   private func capQP(_ wanted: Int) throws {
@@ -123,6 +117,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
 
     do {
       deliver(try encodedTile(submission, sample: sample), requested: submission.refresh)
+      if submission.keptItsCap { metrics.increment("changesKeptSharp") }
     } catch {
       failed(submission.refresh, error.localizedDescription)
     }

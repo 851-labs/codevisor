@@ -10,6 +10,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let tiles: Set<Int>
     var small: Set<Int> = []
     let isRefinement: Bool
+    var repeatsCapture = true
   }
 
   public let metrics: ScreenSharingMetrics
@@ -153,7 +154,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     if let waiting = slot.waiting {
       let tiles = slot.waitingTiles.union(refreshing)
       if !tiles.isEmpty {
-        return Plan(capture: waiting, tiles: tiles, small: slot.smallTiles, isRefinement: false)
+        return Plan(
+          capture: waiting, tiles: tiles, small: slot.smallTiles, isRefinement: false,
+          repeatsCapture: slot.waitingRepeatsLastEncoded)
       }
 
       metrics.increment("captureUnchanged")
@@ -171,14 +174,15 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     slot.encoding(plan.capture)
     deferredCapture = false
     nextUpdate &+= 1
-    let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
+    let update = ScreenSharingTileUpdate(
+      id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement, repeatsCapture: plan.repeatsCapture)
     let refreshes = recovery.takeRefreshes()
     let small = plan.small.subtracting(refreshes.keys)
     note(update)
     for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
       try encoder.encode(plan.capture.request(update: update, refreshes: refreshes, smallTiles: small))
-      metrics.increment("tilesChangedSmall", by: small.count)
+      metrics.increment("smallChangeRequests", by: small.count)
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
