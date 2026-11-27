@@ -37,7 +37,8 @@ enum Tier2InputRun {
   private static func controlProblem(_ files: Tier2RunFiles) -> String? {
     switch files.meta.system {
     case .appleHP: appleControlProblem(files.system)
-    case .codevisor, .codevisorV2, .codevisorV2VCP: codevisorControlProblem(files.system)
+    case .codevisor, .codevisorV2, .codevisorV2VCP, .codevisorV2Before, .codevisorV2VCPBefore:
+      codevisorControlProblem(files.system)
     case .floor: nil
     }
   }

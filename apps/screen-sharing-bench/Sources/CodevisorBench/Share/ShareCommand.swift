@@ -1,5 +1,6 @@
 import Darwin
 import CoreGraphics
+import ScreenSharing
 import ScreenSharingBench
 import ScreenSharingBenchScenes
 
@@ -26,6 +27,7 @@ struct ShareCommand: BenchCommand {
     signals = try BenchSignalFiles(options: options)
     virtualDisplay = try VirtualDisplayOption.read(from: options)
     encoder = try V2EncoderChoice(options: options)
+    if try options.flag("before") { ScreenSharingCapture.labCapsAtSixty = true }
   }
 
   func run() async throws {

@@ -52,6 +52,7 @@ package protocol ScreenSharingRenderPreparer: Sendable {
 
 @MainActor
 package final class ScreenSharingRenderCoordinator {
+  package nonisolated(unsafe) static var labOffCatchUp = false
   package typealias Hop = @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void
 
   package let mailbox: ScreenSharingFrameMailbox
@@ -171,7 +172,7 @@ package final class ScreenSharingRenderCoordinator {
   }
 
   private func holdsToCatchUp() -> Bool {
-    guard let waitNs = catchUp.holds(atNs: clock.now()) else { return false }
+    guard !Self.labOffCatchUp, let waitNs = catchUp.holds(atNs: clock.now()) else { return false }
 
     if let arrived = mailbox.take() {
       if heldFrame != nil { metrics.increment("renderHeldFramesSuperseded") }
@@ -244,7 +245,7 @@ package final class ScreenSharingRenderCoordinator {
     let mailbox = mailbox
     var request = ScreenSharingPreparationRequest(
       frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
-    request.newer = { taken.take(from: mailbox) }
+    if !Self.labOffCatchUp { request.newer = { taken.take(from: mailbox) } }
     request.discardNewer = { taken.discard() }
     preparer.prepare(request) { [weak self] prepared in
       hop { self?.finishPreparation(token: token, prepared) }
