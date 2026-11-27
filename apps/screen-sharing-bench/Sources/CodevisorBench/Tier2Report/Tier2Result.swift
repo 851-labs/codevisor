@@ -19,6 +19,7 @@ enum Tier2Result {
     result.gapMs = analysis.gapMs
     result.judderMs = analysis.judderMs
     result.freezes = analysis.freezes
+    result.longGaps = analysis.longGaps
     result.bitrateMbps = measurement.viewerUsage?.receivedMbps
     result.cpuPct = BenchResult.PerMachine(host: measurement.hostUsage?.cpuPct, viewer: measurement.viewerUsage?.cpuPct)
     result.systemCpuPct = measurement.files.systemCpuPct

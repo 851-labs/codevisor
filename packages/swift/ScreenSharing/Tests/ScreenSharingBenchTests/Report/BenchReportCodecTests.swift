@@ -18,6 +18,7 @@ struct BenchReportCodecTests {
     report.run.tier = 4
     report.results[0].shownRatio = 1.2
     report.results[0].valid = false
+    report.results[0].longGaps?.over500Ms.count = 3
     report.results[1].seed = 1 << 60
     report.comparisons[0].noiseBandMs = -1
     report.comparisons[1].system = .appleHP
@@ -27,6 +28,7 @@ struct BenchReportCodecTests {
         "schema is codevisor.screen-sharing.bench/v0, expected codevisor.screen-sharing.bench/v1",
         "run.tier 4 is not 1, 2 or 3",
         "results[0]: shown_ratio 1.2 is outside 0…1",
+        "results[0]: long_gaps must not be negative, and over500_ms must not exceed over250_ms",
         "results[0]: valid must be true exactly when invalid_reason is absent",
         "results[1]: seed 1152921504606846976 is above 2^53 − 1, which JSON readers round",
         "comparisons[0]: noise_band_ms -1.0 is negative",

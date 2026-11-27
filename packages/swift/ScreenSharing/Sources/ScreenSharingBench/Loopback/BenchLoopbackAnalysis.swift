@@ -33,6 +33,7 @@ public struct BenchLoopbackAnalysis: Sendable {
     result.gapMs = BenchDistribution(gapsMs)
     result.judderMs = result.gapMs.map { $0.p95 - cadence.changeIntervalMs }
     result.freezes = cadence.changesContinuously ? BenchFreezes(gapsMs: gapsMs, activeDurationMs: windowMs) : nil
+    result.longGaps = cadence.changesContinuously ? BenchLongGaps(gapsMs: gapsMs) : nil
     result.e2eMs = BenchDistribution(frames.compactMap(e2eMs))
     result.e2eEndpoint = endpoint
     result.e2eOutsideJitterBufferMs = BenchDistribution(frames.compactMap(e2eOutsideJitterBufferMs))
