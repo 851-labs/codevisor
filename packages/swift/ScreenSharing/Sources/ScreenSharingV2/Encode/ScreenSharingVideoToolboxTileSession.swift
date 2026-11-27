@@ -215,13 +215,14 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
 
   private func dropped(_ submission: Submission) {
     metrics.increment("encoderDroppedFrames")
-    relay.emit(.dropped(tile: tile, refresh: submission.refresh))
+    relay.emit(.dropped(tile: tile, refresh: submission.refresh, repeatsCapture: submission.repeatsCapture))
   }
 
   private func failed(_ submission: Submission, _ message: String, status: OSStatus) {
     metrics.increment("encodeErrors")
     noteSessionFailure(status)
-    relay.emit(.failed(tile: tile, refresh: submission.refresh, message: message))
+    relay.emit(
+      .failed(tile: tile, refresh: submission.refresh, message: message, repeatsCapture: submission.repeatsCapture))
   }
 
   private func release(_ submission: Submission) -> Bool {

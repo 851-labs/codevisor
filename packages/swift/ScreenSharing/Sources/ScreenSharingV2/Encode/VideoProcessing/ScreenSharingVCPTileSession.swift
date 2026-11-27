@@ -80,7 +80,9 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     guard wasRunning else { return }
 
     for submission in state.withLock({ $0.unfinished() }) {
-      relay.emit(.failed(tile: tile, refresh: submission.refresh, message: "VCP stopped"))
+      relay.emit(
+        .failed(
+          tile: tile, refresh: submission.refresh, message: "VCP stopped", repeatsCapture: submission.repeatsCapture))
     }
   }
 
@@ -106,21 +108,21 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     switch receipt {
     case .encoded(let submission): encoded(output, submission: submission)
     case .skipped(let submission, let unchanged): skipped(submission, unchanged: unchanged)
-    case .failed(let submission): failed(submission.refresh, "VCP status \(output.status)")
+    case .failed(let submission): failed(submission, "VCP status \(output.status)")
     }
   }
 
   private func encoded(_ output: ScreenSharingVCPOutput, submission: ScreenSharingVCPSubmission) {
     guard let sample = output.sample, fits(output) else {
-      return failed(submission.refresh, "VCP tile \(tile) has an unexpected size")
+      return failed(submission, "VCP tile \(tile) has an unexpected size")
     }
 
     do {
       let encoded = try encodedTile(submission, sample: sample)
-      deliver(encoded, requested: submission.refresh)
       if submission.keptItsCap, !encoded.isKeyFrame { metrics.increment("changesKeptSharp") }
+      deliver(encoded, requested: submission.refresh)
     } catch {
-      failed(submission.refresh, error.localizedDescription)
+      failed(submission, error.localizedDescription)
     }
   }
 
@@ -153,13 +155,14 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
       relay.emit(.unchanged(tile: tile, update: submission.update.id))
     } else {
       metrics.increment("encoderDroppedFrames")
-      relay.emit(.dropped(tile: tile, refresh: submission.refresh))
+      relay.emit(.dropped(tile: tile, refresh: submission.refresh, repeatsCapture: submission.repeatsCapture))
     }
   }
 
-  private func failed(_ refresh: ScreenSharingTileRefresh?, _ message: String) {
+  private func failed(_ submission: ScreenSharingVCPSubmission, _ message: String) {
     metrics.increment("encodeErrors")
     state.withLock { $0.failure = $0.failure ?? message }
-    relay.emit(.failed(tile: tile, refresh: refresh, message: message))
+    relay.emit(
+      .failed(tile: tile, refresh: submission.refresh, message: message, repeatsCapture: submission.repeatsCapture))
   }
 }

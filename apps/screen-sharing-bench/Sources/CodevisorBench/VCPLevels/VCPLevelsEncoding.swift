@@ -28,7 +28,7 @@ enum VCPLevelsEncoding {
       switch try await output(pass, from: outputs) {
       case .tile(let tile): units.append(tile.accessUnit)
       case .unchanged, .dropped, .keyframeNeeded: continue
-      case .failed(_, _, let message): throw BenchUsageError(message: "VCP pass \(pass) failed: \(message)")
+      case .failed(_, _, let message, _): throw BenchUsageError(message: "VCP pass \(pass) failed: \(message)")
       }
     }
     return units

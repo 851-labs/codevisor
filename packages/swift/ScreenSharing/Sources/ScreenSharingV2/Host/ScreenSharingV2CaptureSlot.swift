@@ -29,14 +29,12 @@ struct ScreenSharingV2CaptureSlot {
     lastEncoded = capture
   }
 
-  mutating func requeue(tiles: Set<Int>, repeating: Bool = false) {
+  mutating func requeue(tiles: Set<Int>, repeated: Set<Int> = []) {
     guard let capture = waiting ?? lastEncoded else { return }
 
-    if repeating, waiting.map({ $0.capturedNs == lastEncoded?.capturedNs }) ?? true {
-      repeatedTiles.formUnion(tiles)
-    } else {
-      repeatedTiles.subtract(tiles)
-    }
+    let repeatsLastEncoded = waiting.map { $0.frame.timestampNs == lastEncoded?.frame.timestampNs } ?? true
+    let repeating = repeatsLastEncoded ? tiles.intersection(repeated) : []
+    repeatedTiles = repeatedTiles.subtracting(tiles).union(repeating)
     waiting = capture
     waitingTiles.formUnion(tiles)
     smallTiles.subtract(tiles)

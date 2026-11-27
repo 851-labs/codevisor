@@ -217,12 +217,16 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   ) -> ScreenSharingTileEncoderOutput {
     switch output {
     case .tile(let tile):
-      guard owners.owns(tile.tile, source) else { return .dropped(tile: tile.tile, refresh: nil) }
+      guard owners.owns(tile.tile, source) else {
+        return .dropped(tile: tile.tile, refresh: nil, repeatsCapture: tile.repeatsCapture)
+      }
 
       if let token = tile.ltrToken { owners.remember(token, tile: tile.tile, issuedBy: source) }
       return output
-    case .unchanged(let tile, _), .failed(let tile, _, _):
-      return owners.owns(tile, source) ? output : .dropped(tile: tile, refresh: nil)
+    case .unchanged(let tile, _):
+      return owners.owns(tile, source) ? output : .dropped(tile: tile, refresh: nil, repeatsCapture: true)
+    case .failed(let tile, _, _, let repeats):
+      return owners.owns(tile, source) ? output : .dropped(tile: tile, refresh: nil, repeatsCapture: repeats)
     case .dropped, .keyframeNeeded:
       return output
     }

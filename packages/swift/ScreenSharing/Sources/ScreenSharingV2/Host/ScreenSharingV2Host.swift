@@ -189,7 +189,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       metrics.label("lastEncodeError", error.localizedDescription)
       for tile in plan.tiles { release(tile) }
       recovery.restore(refreshes)
-      slot.requeue(tiles: plan.tiles, repeating: plan.isRefinement)
+      slot.requeue(tiles: plan.tiles, repeated: plan.repeated)
     }
   }
 
@@ -264,9 +264,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
         }
         finished(tile: tile.tile)
       }
-    case .dropped(let tile, let refresh):
+    case .dropped(let tile, let refresh, let repeatsCapture):
       queue.async { [self] in
-        retry(refresh, tile: tile)
+        retry(refresh, tile: tile, repeatsCapture: repeatsCapture)
         finished(tile: tile)
       }
     case .unchanged(let tile, let update):
@@ -275,10 +275,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
         refinement.settled(tile, by: update)
         finished(tile: tile)
       }
-    case .failed(let tile, let refresh, let message):
+    case .failed(let tile, let refresh, let message, let repeatsCapture):
       metrics.label("lastEncodeError", message)
       queue.async { [self] in
-        retry(refresh, tile: tile)
+        retry(refresh, tile: tile, repeatsCapture: repeatsCapture)
         release(tile)
         retryAfterFailure()
       }
@@ -306,8 +306,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
   }
 
-  private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int) {
-    slot.requeue(tiles: [tile], repeating: refinement.sharpenedLast.contains(tile))
+  private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int, repeatsCapture: Bool) {
+    slot.requeue(tiles: [tile], repeated: repeatsCapture ? [tile] : [])
     guard let refresh else { return }
 
     recovery.retry(refresh, tile: tile)
