@@ -121,6 +121,9 @@ public struct BenchResult: Codable, Sendable, Equatable {
     if seed > Self.largestSeed { issues.append("seed \(seed) is above 2^53 − 1, which JSON readers round") }
     if !Self.isFraction(shownRatio) { issues.append("shown_ratio \(shownRatio) is outside 0…1") }
     if let freezes, !Self.isFraction(freezes.ratio) { issues.append("freezes.ratio \(freezes.ratio) is outside 0…1") }
+    if let longGaps, !longGaps.isConsistent {
+      issues.append("long_gaps must not be negative, and over500_ms must not exceed over250_ms")
+    }
     if !Self.isFraction(unreadableFraction) {
       issues.append("unreadable_fraction \(unreadableFraction) is outside 0…1")
     }

@@ -25,6 +25,12 @@ public struct BenchLongGaps: Codable, Sendable, Equatable {
     self.over500Ms = over500Ms
   }
 
+  var isConsistent: Bool {
+    let tallies = [over250Ms, over500Ms]
+    return tallies.allSatisfy { $0.count >= 0 && $0.totalMs >= 0 }
+      && over500Ms.count <= over250Ms.count && over500Ms.totalMs <= over250Ms.totalMs
+  }
+
   public init(gapsMs: [Double]) {
     self.init(
       over250Ms: Tally(gapsMs: gapsMs, over: Self.shortThresholdMs),
