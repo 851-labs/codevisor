@@ -6,6 +6,7 @@ import Foundation
 struct HomeSidebarContentBuilder {
   let environment: AppEnvironment
   let gitLookups: SidebarGitLookups
+  var openWorkspaceId: UUID?
 
   var botEntries: [BotSidebarEntry] {
     environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
@@ -252,9 +253,10 @@ struct HomeSidebarContentBuilder {
       )
     }
     let mainTabId = workspace.mainTab.id
+    let openTabId = workspace.id == openWorkspaceId ? workspace.selectedCenterTabId : nil
     let sessions = environment.projectList
     for tab in workspace.centerTabs
-    where tab.id == mainTabId || AgentChatTabs.isListed(tab, in: workspace, sessions: sessions) {
+    where tab.id == mainTabId || AgentChatTabs.isListed(tab, in: workspace, openTabId: openTabId, sessions: sessions) {
       for group in tab.root.allGroups {
         for pane in group.state.panes {
           append(pane, owner: tab)

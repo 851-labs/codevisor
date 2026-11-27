@@ -11,7 +11,9 @@ struct HomeSidebarLiveList: View {
   let mode: Binding<SidebarMode>
 
   var body: some View {
-    let builder = HomeSidebarContentBuilder(environment: environment, gitLookups: gitLookups)
+    let builder = HomeSidebarContentBuilder(
+      environment: environment, gitLookups: gitLookups,
+      openWorkspaceId: splitNavigation?.presentedWorkspace?.workspaceId)
     HomeSidebarList(
       makeContent: builder.content,
       actions: actions,
