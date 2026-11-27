@@ -25,6 +25,8 @@ export interface FakeMachine {
   readonly files: Map<string, string>
   readonly spawned: Array<{ command: string; args: ReadonlyArray<string>; logPath: string }>
   readonly terminated: number[]
+  readonly madePrivate: string[]
+  readonly closedToOthers: string[]
   readonly changes: { count: number }
 }
 
@@ -52,6 +54,9 @@ export const UBUNTU = {
 
 export const APT_UPDATE_LOOP = `for try in $(seq 60); do out=$(apt-get update -q 2>&1) && exit 0; echo "$out"; echo "$out" | grep -q "Could not get lock" || exit 1; sleep 10; done; exit 1`
 
+export const TIME_LIMIT = "timeout --kill-after=30 1200"
+export const AS_ROOT = `sudo -n ${TIME_LIMIT}`
+
 export const SESSION_RUNNER = 4243
 
 export const CHANGED = "(told that what is shared changed)"
@@ -72,6 +77,8 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
   const files = new Map<string, string>(Object.entries(options.files ?? {}))
   const spawned: FakeMachine["spawned"] = []
   const terminated: number[] = []
+  const madePrivate: string[] = []
+  const closedToOthers: string[] = []
   const alive = new Set<number>(options.alive ?? [])
   const changes = { count: 0 }
   const programs = new Set(options.programs ?? EVERY_PROGRAM)
@@ -127,7 +134,8 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       options.existing?.includes(path) === true ||
       options.folders?.[path] !== undefined,
     listFolder: (path) => options.folders?.[path] ?? [],
-    makePrivateFolder: () => undefined,
+    makePrivateFolder: (path) => void madePrivate.push(path),
+    closeToOtherAccounts: (path) => void closedToOthers.push(path),
     sleep: async () => undefined
   }
 
@@ -149,5 +157,15 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     },
     locate
   })
-  return { system, manager, commands, files, spawned, terminated, changes }
+  return {
+    system,
+    manager,
+    commands,
+    files,
+    spawned,
+    terminated,
+    madePrivate,
+    closedToOthers,
+    changes
+  }
 }
