@@ -67,7 +67,7 @@ When a desktop is set up or removed, the server publishes `server.features.updat
 
 ### Apps opened by agents and terminals
 
-While a desktop that `codevisor desktop setup` set up is configured, what the server starts for you gets that desktop's `DISPLAY` and `XAUTHORITY`, so a window it opens (a browser under test, a GUI app run from a terminal) appears in the desktop you are watching:
+While a desktop that `codevisor desktop setup` set up is running, what the server starts for you gets that desktop's `DISPLAY` and `XAUTHORITY`, so a window it opens (a browser under test, a GUI app run from a terminal) appears in the desktop you are watching:
 
 | Started by the server                                   | Gets the desktop's display |
 | ------------------------------------------------------- | -------------------------- |
@@ -80,12 +80,13 @@ While a desktop that `codevisor desktop setup` set up is configured, what the se
 All four go through one function, `desktopEnvironment` (`src/desktop/desktop-environment.ts`), which each of them calls when it starts a process. The rules:
 
 1. **An environment that already has a display is left exactly as it is**, cookie included. That is any environment where `DISPLAY` or `WAYLAND_DISPLAY` is set, even to nothing. It covers a server started inside a graphical login or with `DISPLAY` in its unit, and a process whose own configuration sets one (an MCP server's `env`, a terminal's own variables).
-2. **Otherwise `DISPLAY` and `XAUTHORITY` are set together** from `screen-sharing.json`. An `XAUTHORITY` that came without a `DISPLAY` is replaced, because a cookie only works with its own display.
-3. **Whatever runs later still wins.** A shell profile that exports `DISPLAY` overrides it in that terminal, like any other variable.
+2. **Otherwise `DISPLAY` and `XAUTHORITY` are set together** from `screen-sharing.json`, never one without the other. An `XAUTHORITY` that came without a `DISPLAY` is replaced, because a cookie only works with its own display.
+3. **A display Codevisor put there itself is not somebody's choice.** The pair is marked with `CODEVISOR_DESKTOP_DISPLAY`, set to the same display. A server started from a Codevisor terminal inherits all three; it treats that display as its own to replace or take away, so it keeps following the config. Change `DISPLAY` in such an environment and rule 1 applies again.
+4. **Whatever runs later still wins.** A shell profile that exports `DISPLAY` overrides it in that terminal, like any other variable.
 
-Nothing is set when there is no desktop, when the config has no `service` key (a desktop Codevisor didn't set up, which includes the dev container's own script), when the config is an older one that names a port, or on macOS.
+Nothing is set when there is no desktop, when the desktop is not running (its session's mark, `<socket>.ready`, is missing or names a runner that is gone), when the config has no `service` key (a desktop Codevisor didn't set up, which includes the dev container's own script), when the config is an older one that names a port, or on macOS. A display that isn't there would make an app that can run without one, a headless browser say, fail instead.
 
-The config is read each time a process is started, never kept. A desktop that is set up, moves to another display number or is removed while the server runs is followed by the next agent session, terminal, command or MCP server that starts. What is already running keeps the environment it started with: open a new terminal or start a new session to pick up a desktop that was set up afterwards. Whether the desktop is up at that moment is not checked; an app started while it is down fails to open its window, as it would without a display.
+The config is read each time a process is started, never kept. A desktop that is set up, moves to another display number or is removed while the server runs is followed by the next agent session, terminal, command or MCP server that starts. What is already running keeps the environment it started with: open a new terminal or start a new session to pick up a desktop that was set up, or came back, afterwards.
 
 Not done yet: removing the packages again (`remove` leaves them installed).
 

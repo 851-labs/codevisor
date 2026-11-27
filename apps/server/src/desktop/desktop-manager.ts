@@ -19,7 +19,7 @@ import {
   freeDisplay,
   keepOwnFoldersPrivate,
   ownXServerOn,
-  readyMarkOf
+  sessionIsUp
 } from "./desktop-layout.js"
 import { installPlan, missingPrograms, osRelease, runAsRoot, sudoKind } from "./desktop-packages.js"
 import {
@@ -128,18 +128,13 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return { state: "stopped", ...display, problem: socket.detail }
   }
 
-  const sessionIsUp = (socket: string): boolean => {
-    const runner = Number(system.readText(readyMarkOf(socket))?.trim() ?? "")
-    return Number.isInteger(runner) && runner > 0 && system.processAlive(runner)
-  }
-
   const whyOursIsDown = (runs: DesktopService): string | undefined => {
     const setup = setUp()
     if (setup.kind !== "ready" || recordedService() === undefined) return undefined
     if (runs.kind === "process" && recordedService() === "process" && !runs.isSetUp())
       return "the desktop's process isn't running"
 
-    return sessionIsUp(setup.config.socket) ? undefined : "the desktop's session isn't up"
+    return sessionIsUp(system, setup.config.socket) ? undefined : "the desktop's session isn't up"
   }
 
   const sharedBy = (runs: DesktopService, other: DesktopService): Shared => {
@@ -299,7 +294,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
     for (let poll = 0; poll < startPolls && steady < steadyPolls; poll += 1) {
-      const isUp = locate(layout.socket).problem === undefined && sessionIsUp(layout.socket)
+      const isUp = locate(layout.socket).problem === undefined && sessionIsUp(system, layout.socket)
       steady = isUp ? steady + 1 : 0
       await system.sleep(startPollMs)
     }

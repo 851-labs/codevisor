@@ -74,6 +74,14 @@ export const ownXServerOn = (
 
 export const readyMarkOf = (socket: string): string => `${socket}.ready`
 
+export const sessionIsUp = (
+  system: Pick<DesktopSystem, "readText" | "processAlive">,
+  socket: string
+): boolean => {
+  const runner = Number(system.readText(readyMarkOf(socket))?.trim() ?? "")
+  return Number.isInteger(runner) && runner > 0 && system.processAlive(runner)
+}
+
 export const x11SocketOf = (display: number): string => `/tmp/.X11-unix/X${display}`
 
 export const x11LockOf = (display: number): string => `/tmp/.X${display}-lock`
