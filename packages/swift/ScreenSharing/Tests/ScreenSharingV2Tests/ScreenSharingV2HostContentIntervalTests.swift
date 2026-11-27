@@ -90,6 +90,7 @@ struct ScreenSharingV2HostContentIntervalTests {
     for (index, (frames, top, bottom)) in [(0, 10, 10), (1, 20, 10), (2, 30, 10), (5, 30, 20)].enumerated() {
       host.push(try TestPixels.frame(shades: [UInt8(top), 10, UInt8(bottom)], timestampNs: Self.at(frames: frames)))
       await encoder.encodes.cancellableWait(for: index + 1)
+      try #require(encoder.requests.count > index)
       encoder.emitTiles(of: encoder.requests[index])
     }
 
