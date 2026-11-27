@@ -4,9 +4,11 @@ import SwiftUI
   struct BotMascotRiveCanvas: NSViewRepresentable {
     let stage: BotMascotStage
     let pointer: BotMascotPointer
+    let onFirstFrame: () -> Void
 
     func makeNSView(context: Context) -> BotMascotCanvasView {
       let view = BotMascotCanvasView()
+      view.onFirstFrame = onFirstFrame
       stage.attach(view, pointer: pointer)
       return view
     }
@@ -33,9 +35,11 @@ import SwiftUI
   struct BotMascotRiveCanvas: UIViewRepresentable {
     let stage: BotMascotStage
     let pointer: BotMascotPointer
+    let onFirstFrame: () -> Void
 
     func makeUIView(context: Context) -> BotMascotCanvasView {
       let view = BotMascotCanvasView()
+      view.onFirstFrame = onFirstFrame
       stage.attach(view, pointer: pointer)
       return view
     }

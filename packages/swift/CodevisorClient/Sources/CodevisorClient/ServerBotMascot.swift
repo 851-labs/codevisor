@@ -38,16 +38,4 @@ public struct ServerBotMascot: Codable, Hashable, Sendable {
     if !item.offers(self[keyPath: part.color]) { next[keyPath: part.color] = Self.autoColor }
     return next
   }
-
-  var queryItems: [URLQueryItem] {
-    [
-      URLQueryItem(name: "color", value: color),
-      URLQueryItem(name: "hat", value: hat),
-      URLQueryItem(name: "eyewear", value: eyewear),
-    ] + colorQueryItem("hatColor", hatColor) + colorQueryItem("eyewearColor", eyewearColor)
-  }
-
-  private func colorQueryItem(_ name: String, _ value: String) -> [URLQueryItem] {
-    value == Self.autoColor ? [] : [URLQueryItem(name: name, value: value)]
-  }
 }

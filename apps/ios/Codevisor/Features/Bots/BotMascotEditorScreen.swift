@@ -6,7 +6,6 @@ struct BotMascotEditorScreen: View {
   private static let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
 
   let options: ServerBotMascotOptions
-  let serverId: String
   let onSave: (ServerBotMascot) -> Void
 
   @Environment(\.dismiss) private var dismiss
@@ -18,11 +17,9 @@ struct BotMascotEditorScreen: View {
   init(
     mascot: ServerBotMascot,
     options: ServerBotMascotOptions,
-    serverId: String,
     onSave: @escaping (ServerBotMascot) -> Void
   ) {
     self.options = options
-    self.serverId = serverId
     self.onSave = onSave
     _mascot = State(initialValue: mascot)
   }
@@ -30,7 +27,7 @@ struct BotMascotEditorScreen: View {
   var body: some View {
     NavigationStack {
       VStack(spacing: 0) {
-        BotMascotImage(mascot: mascot, serverId: serverId)
+        BotMascotImage(mascot: mascot)
           .frame(width: previewSide, height: previewSide)
           .padding(.vertical, 16)
         BotMascotCategoryTabs(selection: $category)
@@ -54,7 +51,6 @@ struct BotMascotEditorScreen: View {
     BotMascotCategoryControls(
       category: category,
       options: options,
-      serverId: serverId,
       columns: Self.columns,
       swatchSide: swatchSide,
       mascot: $mascot

@@ -60,6 +60,7 @@
     "ratchet:check": "node scripts/check-size-ratchet.mjs",
     "comments:check": "node scripts/check-comments.mjs",
     "ios-simulator": "bun scripts/ios-simulator.mjs",
+    "mascots:export-art": "bun --conditions=@codevisor/source scripts/export-bot-mascot-art.mjs",
     "mascots:export-crew": "bun --conditions=@codevisor/source scripts/export-bots-empty-crew.mjs"
   },
   "devDependencies": {

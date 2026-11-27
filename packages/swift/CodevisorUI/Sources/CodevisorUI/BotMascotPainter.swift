@@ -17,7 +17,9 @@ final class BotMascotPainter {
     guard let side, let device = Self.device, let queue, let scaler, gate.enter() else { return }
 
     let source = canvas(side: side, device: device)
-    let copy = BotMascotFrameCopy(source: source, drawables: views.compactMap { $0.nextDrawable() }, scaler: scaler)
+    let targets = views.compactMap { view in view.nextDrawable().map { (view, $0) } }
+    let copy = BotMascotFrameCopy(
+      source: source, drawables: targets.map(\.1), scaler: scaler, onShown: Self.reportShown(targets.map(\.0)))
     renderer(for: rig).draw(
       rig.configuration(drawableSize: CGSize(width: side, height: side)),
       to: source,
@@ -26,6 +28,11 @@ final class BotMascotPainter {
       onSkipped: copy.resending(on: queue, then: gate),
       onError: copy.abandoning(gate)
     )
+  }
+
+  private static func reportShown(_ views: [BotMascotCanvasView]) -> @Sendable () -> Void {
+    let shown = BotMascotShownViews(views)
+    return { Task { @MainActor in shown.views.forEach { $0?.showedFrame() } } }
   }
 
   private func renderer(for rig: BotMascotRig) -> any RiveUIRendererProtocol {
@@ -53,5 +60,25 @@ final class BotMascotPainter {
       preconditionFailure("Metal couldn't allocate a \(side)px mascot canvas")
     }
     return texture
+  }
+}
+
+private final class BotMascotShownViews: @unchecked Sendable {
+  private let references: [WeakReference]
+
+  @MainActor
+  init(_ views: [BotMascotCanvasView]) {
+    references = views.map(WeakReference.init)
+  }
+
+  @MainActor
+  var views: [BotMascotCanvasView?] { references.map(\.view) }
+
+  private final class WeakReference {
+    weak var view: BotMascotCanvasView?
+
+    init(_ view: BotMascotCanvasView) {
+      self.view = view
+    }
   }
 }

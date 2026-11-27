@@ -31,14 +31,6 @@ struct ServerBotMascotTests {
     #expect(mascot == ServerBotMascot(color: "mint", hat: "beanie", hatColor: "auto", eyewear: "specs"))
   }
 
-  @Test("Asks for a chosen item color in the art URL and leaves Auto out")
-  func artPath() {
-    let path = ServerBotMascotArt(Self.beanie, .portrait).path
-
-    #expect(path.contains("hatColor=red"))
-    #expect(!path.contains("eyewearColor"))
-  }
-
   @Test("Switching hats", arguments: wearRows)
   func wearing(row: WearRow) {
     let worn = Self.beanie.wearing(row.item, on: .hat)

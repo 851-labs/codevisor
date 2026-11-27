@@ -146,7 +146,7 @@ struct BotEditorSheet: View {
   @ViewBuilder
   private var mascotEditor: some View {
     if let mascot = editor.mascot, let options = editor.mascotOptions {
-      BotMascotEditorSheet(mascot: mascot, options: options, serverId: editor.serverId) { editor.mascot = $0 }
+      BotMascotEditorSheet(mascot: mascot, options: options) { editor.mascot = $0 }
     }
   }
 

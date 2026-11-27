@@ -6,7 +6,6 @@ struct BotMascotItemPicker: View {
 
   let part: ServerBotMascotPart
   let options: ServerBotMascotOptions
-  let serverId: String
   let columns: [GridItem]
   let swatchSide: CGFloat
   @Binding var mascot: ServerBotMascot
@@ -21,9 +20,7 @@ struct BotMascotItemPicker: View {
           selection: $mascot[dynamicMember: part.color]
         )
       }
-      BotMascotItemGrid(
-        items: options.items(for: part), part: part, columns: columns, mascot: $mascot, serverId: serverId
-      )
+      BotMascotItemGrid(items: options.items(for: part), part: part, columns: columns, mascot: $mascot)
     }
   }
 

@@ -6,11 +6,16 @@ struct BotMascotFrameCopy: @unchecked Sendable {
   private let source: any MTLTexture
   private let drawables: [any CAMetalDrawable]
   private let scaler: MPSImageLanczosScale
+  private let onShown: @Sendable () -> Void
 
-  init(source: any MTLTexture, drawables: [any CAMetalDrawable], scaler: MPSImageLanczosScale) {
+  init(
+    source: any MTLTexture, drawables: [any CAMetalDrawable], scaler: MPSImageLanczosScale,
+    onShown: @escaping @Sendable () -> Void
+  ) {
     self.source = source
     self.drawables = drawables
     self.scaler = scaler
+    self.onShown = onShown
   }
 
   func finishing(_ gate: BotMascotFrameGate) -> @Sendable (any MTLCommandBuffer) -> Void {
@@ -39,6 +44,7 @@ struct BotMascotFrameCopy: @unchecked Sendable {
       scaler.encode(commandBuffer: commands, sourceTexture: source, destinationTexture: drawable.texture)
       commands.present(drawable)
     }
+    commands.addCompletedHandler { [onShown] _ in onShown() }
   }
 }
 

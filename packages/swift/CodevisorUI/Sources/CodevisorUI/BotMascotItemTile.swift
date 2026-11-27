@@ -8,13 +8,12 @@ struct BotMascotItemTile: View {
 
   let title: String
   let mascot: ServerBotMascot
-  let serverId: String
   let isSelected: Bool
   let select: () -> Void
 
   var body: some View {
     Button(action: select) {
-      BotMascotImage(mascot: mascot, serverId: serverId)
+      BotMascotImage(mascot: mascot)
         .padding(Self.inset)
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: .infinity)

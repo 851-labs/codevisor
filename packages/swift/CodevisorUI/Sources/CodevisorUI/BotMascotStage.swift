@@ -6,14 +6,8 @@ import QuartzCore
 @MainActor
 @Observable
 final class BotMascotStage {
-  private enum Attempt {
-    case dressed
-    case retry
-    case stop
-  }
-
-  private static let settleSeconds = 3.0
-  private static let frame = 1.0 / 60
+  static let settleSeconds = 3.0
+  static let frame = 1.0 / 60
   private static let longestStep = 0.25
 
   private(set) var isReady = false
@@ -27,7 +21,6 @@ final class BotMascotStage {
   @ObservationIgnored private var wanted: ServerBotMascot?
   @ObservationIgnored private var dressedAs: ServerBotMascot?
   @ObservationIgnored private var dressing: Task<Void, Never>?
-  @ObservationIgnored private var failures = 0
   @ObservationIgnored private var viewers: [BotMascotViewer] = []
   @ObservationIgnored private var lastTick: CFTimeInterval?
   @ObservationIgnored private var tickerHost: BotMascotCanvasView?
@@ -48,11 +41,11 @@ final class BotMascotStage {
     }
   }
 
-  func dress(as mascot: ServerBotMascot, retrying retry: MachineRetry) {
+  func dress(as mascot: ServerBotMascot) {
     wanted = mascot
     guard mascot != dressedAs, dressing == nil else { return }
 
-    dressing = Task { await dressRig(as: mascot, retrying: retry) }
+    dressing = Task { await dressRig(as: mascot) }
   }
 
   func attach(_ view: BotMascotCanvasView, pointer: BotMascotPointer) {
@@ -95,38 +88,29 @@ final class BotMascotStage {
     rig?.look(.none)
   }
 
-  private func dressRig(as mascot: ServerBotMascot, retrying retry: MachineRetry) async {
-    let attempt = await attemptDressing(as: mascot, retrying: retry)
+  private func dressRig(as mascot: ServerBotMascot) async {
+    await attemptDressing(as: mascot)
     dressing = nil
-    guard let wanted, shouldDressAgain(as: wanted, after: attempt, of: mascot) else { return }
+    guard let wanted, wanted != dressedAs, wanted != mascot else { return }
 
-    dress(as: wanted, retrying: retry)
+    dress(as: wanted)
   }
 
-  private func attemptDressing(as mascot: ServerBotMascot, retrying retry: MachineRetry) async -> Attempt {
+  private func attemptDressing(as mascot: ServerBotMascot) async {
     do {
-      try await putOn(mascot, serverId: retry.machineId, client: retry.client())
+      try await putOn(mascot)
       dressedAs = mascot
-      failures = 0
-      return .dressed
     } catch {
       dressedAs = nil
-      failures += 1
-      return await retry.shouldRetry(after: error, failures: failures) ? .retry : .stop
+      botMascotLog.error("Failed to dress a mascot: \(String(describing: error), privacy: .public)")
     }
   }
 
-  private func shouldDressAgain(as wanted: ServerBotMascot, after attempt: Attempt, of tried: ServerBotMascot) -> Bool {
-    guard wanted != dressedAs else { return false }
-    return attempt != .stop || wanted != tried
-  }
-
-  private func putOn(_ mascot: ServerBotMascot, serverId: String, client: any CodevisorServerClienting) async throws {
-    let values = try await BotMascotRiveFiles.shared.values(for: mascot, client: client)
+  private func putOn(_ mascot: ServerBotMascot) async throws {
+    let values = try await BotMascotArtwork.shared.values(for: mascot)
     if let rig { return rig.dress(values) }
 
-    let file = try await BotMascotRiveFiles.shared.file(serverId: serverId, client: client, mascot: mascot)
-    reveal(try await BotMascotRig.make(file: file, values: values))
+    reveal(try await BotMascotRig.make(file: try await BotMascotArtwork.shared.riveFile(), values: values))
   }
 
   private func reveal(_ rig: BotMascotRig) {
