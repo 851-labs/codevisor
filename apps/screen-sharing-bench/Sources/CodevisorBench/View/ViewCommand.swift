@@ -1,3 +1,4 @@
+import ScreenSharing
 import ScreenSharingBench
 import ScreenSharingBenchScenes
 
@@ -36,6 +37,7 @@ struct ViewCommand: BenchCommand {
     presentation = try options.choice("present", default: V2Presentation.arrival)
     presentsTiles = try options.choice("tiles", default: V2Tiles.on) == .on
     takesControl = try options.flag("control")
+    if try options.flag("before") { ScreenSharingRenderCoordinator.labOffCatchUp = true }
     host = try options.string("host")
     let defaultPort = source == .codevisor ? SignalingSocket.defaultPort : Self.defaultFloorPort
     port = UInt16(try options.integer("port", default: Int(defaultPort), in: Self.ports))

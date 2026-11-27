@@ -17,6 +17,7 @@
     private var stream: (any ScreenSharingCaptureStream)?
     private var output: ScreenSharingCaptureOutput?
     public nonisolated static let defaultQueueDepth = 3
+    package nonisolated(unsafe) static var labCapsAtSixty = false
     public var pixelFormat: OSType
     public var queueDepth = ScreenSharingCapture.defaultQueueDepth
     public private(set) var showsCursor = true
@@ -247,7 +248,9 @@
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
-      config.minimumFrameInterval = cadence.minimumFrameInterval(requesting: video.framesPerSecond)
+      config.minimumFrameInterval =
+        labCapsAtSixty
+        ? CMTime(value: 1, timescale: 60) : cadence.minimumFrameInterval(requesting: video.framesPerSecond)
       config.queueDepth = queueDepth
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio

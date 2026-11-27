@@ -70,7 +70,7 @@ tier2_plan() {
       warm_up=0
     fi
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
-      for system in apple-hp codevisor-v2 codevisor-v2-vcp; do
+      for system in apple-hp codevisor-v2 codevisor-v2-before codevisor-v2-vcp codevisor-v2-vcp-before; do
         tier2_runs_system "$system" || continue
         index=$((index + 1)); echo "$index $scene $system $rep 1 $network"
       done
@@ -79,7 +79,7 @@ tier2_plan() {
   local video
   video=$(tier2_video_network)
   if ((TIER2_C4)) && [[ -n "$video" ]]; then
-    for system in apple-hp codevisor-v2 codevisor-v2-vcp; do
+    for system in apple-hp codevisor-v2 codevisor-v2-before codevisor-v2-vcp codevisor-v2-vcp-before; do
       tier2_runs_system "$system" || continue
       index=$((index + 1)); echo "$index video $system 1 0 $video"
     done
@@ -116,7 +116,11 @@ tier2_runs_system() {
 }
 
 tier2_encoder_options() {
-  if [[ "$1" == codevisor-v2-vcp ]]; then
+  if [[ "$1" == codevisor-v2-vcp-before ]]; then
+    echo --encoder vcp --before
+  elif [[ "$1" == codevisor-v2-before ]]; then
+    echo --encoder vt --before
+  elif [[ "$1" == codevisor-v2-vcp ]]; then
     echo --encoder vcp
     ((TIER2_VCP_FAIL_AFTER > 0)) && echo --vcp-fail-after "$TIER2_VCP_FAIL_AFTER"
   elif [[ "$1" == codevisor-v2 ]]; then
@@ -125,8 +129,13 @@ tier2_encoder_options() {
   return 0
 }
 
+tier2_viewer_variant_options() {
+  [[ "$1" == *-before ]] && echo --before
+  return 0
+}
+
 tier2_on_virtual_display() {
-  [[ "$1" == codevisor-v2 || "$1" == codevisor-v2-vcp ]]
+  [[ "$1" == codevisor-v2* ]]
 }
 
 tier2_is_warm_up() {
@@ -152,7 +161,7 @@ tier2_name() {
 
 tier2_resolution() {
   case "$1" in
-    apple-hp | codevisor-v2 | codevisor-v2-vcp) echo R1x2 ;;
+    apple-hp | codevisor-v2*) echo R1x2 ;;
     *) echo R1 ;;
   esac
 }
@@ -245,7 +254,7 @@ tier2_check_inputs() {
     echo "warm-up must be 0 (none) or 20 to 120 seconds, not $TIER2_WARM_UP_S" >&2
     return 1
   }
-  local system_pattern="(apple-hp|codevisor-v2-vcp|codevisor-v2)"
+  local system_pattern="(apple-hp|codevisor-v2-vcp-before|codevisor-v2-before|codevisor-v2-vcp|codevisor-v2)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   local runs planned_s
   runs=$(($(tier2_plan | wc -l)))
@@ -271,7 +280,7 @@ tier2_check_input_scene() {
     echo "input events must be 1 to 400 of each kind, not $TIER2_INPUT_EVENTS" >&2
     return 1
   fi
-  if [[ "$TIER2_PRESENT" != arrival ]] && { tier2_runs_system codevisor-v2 || tier2_runs_system codevisor-v2-vcp; }; then
+  if [[ "$TIER2_PRESENT" != arrival ]] && [[ "$TIER2_SYSTEMS" == *codevisor-v2* ]]; then
     echo "the input scene needs the arrival presentation" >&2
     return 1
   fi
