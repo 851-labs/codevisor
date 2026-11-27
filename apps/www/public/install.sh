@@ -330,6 +330,8 @@ finish_server_onboarding() {
     note "Finish onboarding later with: $(service_user_command 'codevisor setup')"
   elif [ -t 1 ] && [ -r /dev/tty ]; then
     say "Finishing setup"
+    as_service_user rm -f "$data_dir/desktop-setup-failed"
+    onboarding_at_terminal=1
     codevisor_cli setup < /dev/tty ||
       note "Finish onboarding with: $(service_user_command 'codevisor setup')"
   else
@@ -337,6 +339,29 @@ finish_server_onboarding() {
     note "Finish onboarding on this machine with: $(service_user_command 'codevisor setup')"
     note "(It signs the machine in so it appears in your Codevisor apps.)"
   fi
+}
+
+desktop_is_set_up() {
+  grep -qs -e '"service":[[:space:]]*"systemd-user"' -e '"service":[[:space:]]*"process"' \
+    "$data_dir/screen-sharing.json"
+}
+
+installed_cli_sets_up_desktops() {
+  as_service_user "$bin_dir/codevisor" desktop setup --help 2>/dev/null </dev/null |
+    grep -q 'codevisor desktop setup'
+}
+
+onboarding_just_dealt_with_the_desktop() {
+  [ -e "$data_dir/desktop-declined" ] ||
+    { [ "$onboarding_at_terminal" = "1" ] && [ -e "$data_dir/desktop-setup-failed" ]; }
+}
+
+mention_desktop() {
+  [ "$os" = "linux" ] || return 0
+  ! desktop_is_set_up || return 0
+  ! onboarding_just_dealt_with_the_desktop || return 0
+  installed_cli_sets_up_desktops || return 0
+  say "Add a desktop: $(service_user_command 'codevisor desktop setup')"
 }
 
 install_server() {
@@ -353,6 +378,7 @@ install_server() {
 
   service_user=""
   service_running=0
+  onboarding_at_terminal=0
   service_home="$HOME"
   if [ "$(id -u)" = "0" ] && [ "$os" = "linux" ]; then
     resolve_service_user
@@ -379,6 +405,7 @@ install_server() {
   activate_server_runtime
   configure_server_service
   finish_server_onboarding
+  mention_desktop
 }
 
 is_apple_silicon() {

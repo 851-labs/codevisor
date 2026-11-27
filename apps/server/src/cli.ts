@@ -10,6 +10,7 @@ import { Effect, Option } from "effect"
 import { Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand } from "./cli/cloud-auth.js"
+import { offerDesktop } from "./cli/desktop-offer.js"
 import { fetchJson } from "./cli/fetch-json.js"
 import { mcpCommand, type McpSession } from "./cli/mcp.js"
 import { setupCommand, type SetupDeps } from "./cli/setup.js"
@@ -30,7 +31,8 @@ import {
   makeMachinesCommand,
   optionalString,
   portFlag,
-  runPrompt
+  runPrompt,
+  runPromptOr
 } from "./cli/wiring.js"
 import { runDesktop } from "./desktop/desktop-runner.js"
 import { systemDesktopSystem } from "./desktop/desktop-system.js"
@@ -262,12 +264,30 @@ const mcp = Command.make(
   )
 )
 
+const askOrNo = (question: string): Promise<boolean> =>
+  runPromptOr(Prompt.confirm({ message: question, initial: false }), false)
+
+const answerIfAny = (question: string): Promise<boolean | undefined> =>
+  runPromptOr<boolean | undefined>(Prompt.confirm({ message: question, initial: false }), undefined)
+
 const makeSetupDeps = (): SetupDeps => {
   const deps = makeDeps()
+  const isInteractive = process.stdin.isTTY && process.stdout.isTTY
   return {
     ...deps,
-    isInteractive: process.stdin.isTTY && process.stdout.isTTY,
-    cloudLogin: (port) => authLoginCommand(deps, { port, machineName: hostname() })
+    isInteractive,
+    cloudLogin: (port) => authLoginCommand(deps, { port, machineName: hostname() }),
+    offerDesktop: async (options) =>
+      offerDesktop(
+        {
+          ...deps,
+          isInteractive,
+          confirm: askOrNo,
+          answer: answerIfAny,
+          system: systemDesktopSystem()
+        },
+        options
+      )
   }
 }
 

@@ -4,6 +4,15 @@ import { resolvePort, startCommand, type CliDeps, type CommandOptions } from "./
 export interface SetupDeps extends CliDeps {
   readonly isInteractive: boolean
   readonly cloudLogin: (port: number) => Promise<number>
+  readonly offerDesktop: (options: CommandOptions) => Promise<void>
+}
+
+const desktopOffered = async (deps: SetupDeps, options: CommandOptions): Promise<void> => {
+  try {
+    await deps.offerDesktop(options)
+  } catch {
+    return
+  }
 }
 
 export const setupCommand = async (
@@ -30,6 +39,7 @@ export const setupCommand = async (
       `✓ This machine is already connected to your ${registration.serverUrl ?? "Codevisor Cloud"} account.`
     )
     deps.log("Check its connection any time with: codevisor auth status")
+    await desktopOffered(deps, options)
     return 0
   }
 
@@ -38,6 +48,7 @@ export const setupCommand = async (
     deps.error("Retry with: codevisor auth login")
     return 1
   }
+  await desktopOffered(deps, options)
   deps.log("")
   deps.log("✓ Setup complete. This machine appears in every Codevisor app signed in to")
   deps.log("  your account.")
