@@ -7,4 +7,7 @@ struct ScreenSharingVCPSubmission: Sendable {
   let submittedNs: Int64
   let presentationNs: Int64
   let highestQP: Int
+  let repeatsCapture: Bool
+
+  var keptItsCap: Bool { !update.isRefinement && highestQP < ScreenSharingVCPRate.highestFrameQP }
 }

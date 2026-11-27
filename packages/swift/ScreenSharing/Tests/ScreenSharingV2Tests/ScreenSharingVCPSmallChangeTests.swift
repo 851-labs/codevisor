@@ -41,6 +41,7 @@ extension HardwareCodecTests {
       #expect(stream.encoderMetrics.label("encoderRoute") == "fast")
       #expect(stream.decoded.sourceTimestamps.last == 3_000)
       #expect(stream.encoderMetrics.counter("encoderQPCapChanges") == 1)
+      #expect(stream.encoderMetrics.counter("changesKeptSharp") == 1)
     }
 
     @Test(.enabled(if: shipsVideoProcessing, "The shipped encoder is not VideoProcessing on this machine."))
@@ -54,6 +55,7 @@ extension HardwareCodecTests {
       #expect(stream.encoderMetrics.label("encoderRoute") == "fast")
       #expect(stream.decoded.sourceTimestamps.last == 3_000)
       #expect(stream.encoderMetrics.counter("encoderQPCapChanges") == 2)
+      #expect(stream.encoderMetrics.counter("changesKeptSharp") == 0)
     }
 
     private static func patch(seed: Int) -> TestNoisePatch {

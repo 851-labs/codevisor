@@ -76,7 +76,10 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
       try sessions[tile].encode(pixels, request: request)
     } catch {
       metrics.increment("encodeErrors")
-      relay.emit(.failed(tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription))
+      relay.emit(
+        .failed(
+          tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription,
+          repeatsCapture: request.repeatedTiles.contains(tile)))
     }
   }
 

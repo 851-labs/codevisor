@@ -66,7 +66,7 @@ struct ScreenSharingV2TileComparerTests {
     #expect(changes == ScreenSharingV2TileChanges(changed: Self.layout.tiles, small: []))
   }
 
-  @Test func eachPlaneOfATwoPlaneCaptureIsHeldToTheLimitOnItsOwn() throws {
+  @Test func eachPlaneOfATwoPlaneCaptureIsHeldToTheLimitOnItsOwnInScreenPixels() throws {
     let before = try TestPixels.frame(shade: 10, timestampNs: 1).pixelBuffer
     let colourOnly = try TestPixels.frame(shade: 10, timestampNs: 2).pixelBuffer
     TestPixels.paint(colourOnly, plane: 1, rows: 50..<54, bytes: 20..<28, value: 200)
@@ -74,11 +74,23 @@ struct ScreenSharingV2TileComparerTests {
     TestPixels.paint(both, plane: 1, rows: 50..<54, bytes: 20..<28, value: 200)
     TestPixels.paint(both, plane: 0, rows: 100..<108, bytes: 20..<28, value: 200)
     let wideColour = try TestPixels.frame(shade: 10, timestampNs: 4).pixelBuffer
-    TestPixels.paint(wideColour, plane: 1, rows: 50..<51, bytes: 20..<150, value: 200)
+    TestPixels.paint(wideColour, plane: 1, rows: 50..<51, bytes: 20..<60, value: 200)
 
     #expect(Self.compare(before, colourOnly) == ScreenSharingV2TileChanges(changed: [1], small: [1]))
     #expect(Self.compare(before, both) == ScreenSharingV2TileChanges(changed: [1], small: [1]))
     #expect(Self.compare(before, wideColour) == ScreenSharingV2TileChanges(changed: [1], small: []))
+  }
+
+  @Test func aChromaSampleOfAnOddSizedCaptureStillCountsTheFourPixelsItCovers() throws {
+    let layout = ScreenSharingV2TileLayout(width: 641, height: 361, count: 4)
+    let before = try TestPixels.frame(width: 641, height: 361, shade: 10, timestampNs: 1).pixelBuffer
+    let after = try TestPixels.frame(width: 641, height: 361, shade: 10, timestampNs: 2).pixelBuffer
+    TestPixels.paint(after, plane: 1, rows: 50..<51, bytes: 20..<60, value: 200)
+
+    let changes = ScreenSharingV2TileComparer.changes(
+      layout.tiles, of: layout, from: before, to: after, smallUpToPixels: Self.limit, among: layout.tiles)
+
+    #expect(changes == ScreenSharingV2TileChanges(changed: [1], small: []))
   }
 
   private static func pair() throws -> (CVPixelBuffer, CVPixelBuffer) {

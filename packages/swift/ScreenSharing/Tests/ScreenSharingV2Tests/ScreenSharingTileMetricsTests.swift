@@ -25,19 +25,21 @@ struct ScreenSharingTileMetricsTests {
   }
 
   @Test(arguments: [
-    (false, nil as ScreenSharingTileRefresh?, 1),
-    (true, nil, 0),
-    (false, .longTermReference, 0),
-    (false, .keyframe, 0),
+    (false, false, nil as ScreenSharingTileRefresh?, 1),
+    (true, false, nil, 0),
+    (false, true, nil, 0),
+    (false, false, .longTermReference, 0),
+    (false, false, .keyframe, 0),
   ])
-  func onlyAChangeThatIsNotARefreshIsTimedFromItsCapture(
-    refinement: Bool, requested: ScreenSharingTileRefresh?, timed: Int
+  func onlyAChangeEncodedFromItsOwnCaptureIsTimedFromThatCapture(
+    refinement: Bool, repeatsCapture: Bool, requested: ScreenSharingTileRefresh?, timed: Int
   ) {
     let metrics = ScreenSharingMetrics()
+    let update = ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement)
     let tile = ScreenSharingEncodedTile(
-      tile: 0, update: ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement), sourceTimestampNs: 1,
+      tile: 0, update: update, sourceTimestampNs: 1,
       capturedNs: 1_000_000, submittedNs: 3_000_000, encodedNs: 9_000_000, isKeyFrame: false, refresh: requested,
-      ltrToken: nil, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])))
+      ltrToken: nil, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])), repeatsCapture: repeatsCapture)
 
     ScreenSharingTileMetrics(metrics).record(tile, requested: requested)
 

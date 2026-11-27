@@ -99,7 +99,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
 
   private func fail(_ tile: Int, _ request: ScreenSharingTileEncodeRequest, _ error: any Error) {
     metrics.increment("encodeErrors")
-    relay.emit(.failed(tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription))
+    relay.emit(
+      .failed(
+        tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription,
+        repeatsCapture: request.repeatedTiles.contains(tile)))
   }
 
   public func acknowledge(_ tokens: [UInt64], tile: Int) {

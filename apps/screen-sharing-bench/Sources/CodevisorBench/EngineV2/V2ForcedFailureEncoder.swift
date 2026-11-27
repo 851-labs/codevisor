@@ -55,10 +55,11 @@ final class V2ForcedFailureEncoder: ScreenSharingTileEncoder, @unchecked Sendabl
 
   private static func failure(of result: ScreenSharingTileEncoderOutput) -> ScreenSharingTileEncoderOutput {
     switch result {
-    case .tile(let tile): .failed(tile: tile.tile, refresh: tile.refresh, message: message)
-    case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
-      .failed(tile: tile, refresh: refresh, message: message)
-    case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: message)
+    case .tile(let tile):
+      .failed(tile: tile.tile, refresh: tile.refresh, message: message, repeatsCapture: tile.repeatsCapture)
+    case .dropped(let tile, let refresh, let repeats), .failed(let tile, let refresh, _, let repeats):
+      .failed(tile: tile, refresh: refresh, message: message, repeatsCapture: repeats)
+    case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: message, repeatsCapture: true)
     case .keyframeNeeded: result
     }
   }

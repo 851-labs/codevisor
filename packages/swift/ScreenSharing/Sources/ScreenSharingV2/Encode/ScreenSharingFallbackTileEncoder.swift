@@ -107,7 +107,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   private func primaryOutput(_ output: ScreenSharingTileEncoderOutput) {
     guard !state.withLock({ $0.stopped }) else { return }
     guard !hasFallenBack else { return emit(Self.abandoned(output)) }
-    if case .failed(_, _, let message) = output {
+    if case .failed(_, _, let message, _) = output {
       fallBack(message)
       builds.async { [weak self] in _ = try? self?.builtFallback() }
     }
@@ -117,10 +117,13 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
   private static func abandoned(_ output: ScreenSharingTileEncoderOutput) -> ScreenSharingTileEncoderOutput {
     switch output {
-    case .tile(let tile): .failed(tile: tile.tile, refresh: .keyframe, message: "Encoded after the fallback")
-    case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
-      .failed(tile: tile, refresh: refresh, message: "Encoded after the fallback")
-    case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Encoded after the fallback")
+    case .tile(let tile):
+      .failed(
+        tile: tile.tile, refresh: .keyframe, message: "Encoded after the fallback", repeatsCapture: tile.repeatsCapture)
+    case .dropped(let tile, let refresh, let repeats), .failed(let tile, let refresh, _, let repeats):
+      .failed(tile: tile, refresh: refresh, message: "Encoded after the fallback", repeatsCapture: repeats)
+    case .unchanged(let tile, _):
+      .failed(tile: tile, refresh: nil, message: "Encoded after the fallback", repeatsCapture: true)
     case .keyframeNeeded: output
     }
   }

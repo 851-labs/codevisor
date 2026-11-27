@@ -3,12 +3,6 @@ import Foundation
 import Synchronization
 
 enum ScreenSharingV2TileComparer {
-  private enum Extent {
-    case unchanged
-    case small
-    case large
-  }
-
   static func changes(
     _ tiles: Set<Int>, of layout: ScreenSharingV2TileLayout, from previous: CVPixelBuffer?, to current: CVPixelBuffer,
     smallUpToPixels limit: Int, among measured: Set<Int>
@@ -30,16 +24,17 @@ enum ScreenSharingV2TileComparer {
         limit: measured.contains(tile) ? limit : 0)
     }
     let candidates = Array(tiles)
+    guard candidates.count > 1 else {
+      var changes = ScreenSharingV2TileChanges()
+      for tile in candidates { changes.note(extent(tile), of: tile) }
+      return changes
+    }
+
     let changes = Mutex(ScreenSharingV2TileChanges())
     DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
       let tile = candidates[index]
       let measured = extent(tile)
-      guard measured != .unchanged else { return }
-
-      changes.withLock { changes in
-        changes.changed.insert(tile)
-        if measured == .small { changes.small.insert(tile) }
-      }
+      changes.withLock { $0.note(measured, of: tile) }
     }
     return changes.withLock { $0 }
   }
@@ -57,7 +52,7 @@ enum ScreenSharingV2TileComparer {
   private static func extent(
     _ planes: [ScreenSharingV2PixelPlane], rows: Range<Int>, height: Int, _ previous: CVPixelBuffer,
     _ current: CVPixelBuffer, limit: Int
-  ) -> Extent {
+  ) -> ScreenSharingV2TileExtent {
     var changed = false
     for plane in planes {
       guard let pixels = changedPixels(plane, rows: rows, height: height, previous, current, upTo: limit) else {
@@ -78,10 +73,12 @@ enum ScreenSharingV2TileComparer {
     let oldStride = plane.bytesPerRow(of: previous)
     let newStride = plane.bytesPerRow(of: current)
     let bytesPerPixel = pixelBytes(plane)
+    let screenPixels = screenPixelsPerSample(plane, of: current)
     let length = min(oldStride, newStride, rowBytes(plane, of: current))
     var pixels = 0
     for row in plane.rows(rows, of: current, height: height) {
-      pixels += changedSpan(old + row * oldStride, new + row * newStride, length: length, pixelBytes: bytesPerPixel)
+      let samples = changedSpan(old + row * oldStride, new + row * newStride, length: length, pixelBytes: bytesPerPixel)
+      pixels += samples * screenPixels
       if pixels > limit { return nil }
     }
     return pixels
@@ -106,6 +103,16 @@ enum ScreenSharingV2TileComparer {
     _ old: UnsafeRawPointer, _ new: UnsafeRawPointer, at offset: Int, as type: Value.Type
   ) -> Bool {
     old.loadUnaligned(fromByteOffset: offset, as: type) == new.loadUnaligned(fromByteOffset: offset, as: type)
+  }
+
+  private static func screenPixelsPerSample(_ plane: ScreenSharingV2PixelPlane, of buffer: CVPixelBuffer) -> Int {
+    guard let index = plane.index else { return 1 }
+
+    let planeWidth = max(1, CVPixelBufferGetWidthOfPlane(buffer, index))
+    let planeHeight = max(1, CVPixelBufferGetHeightOfPlane(buffer, index))
+    let across = (CVPixelBufferGetWidth(buffer) + planeWidth - 1) / planeWidth
+    let down = (CVPixelBufferGetHeight(buffer) + planeHeight - 1) / planeHeight
+    return across * down
   }
 
   private static func pixelBytes(_ plane: ScreenSharingV2PixelPlane) -> Int {

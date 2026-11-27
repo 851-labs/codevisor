@@ -280,7 +280,7 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     outputs.all.compactMap { output in
       switch output {
       case .tile(let tile): "tile \(tile.tile)"
-      case .dropped(let tile, _): "dropped \(tile)"
+      case .dropped(let tile, _, _): "dropped \(tile)"
       case .unchanged(let tile, _): "unchanged \(tile)"
       default: nil
       }

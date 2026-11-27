@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import CoreVideo
 import ScreenSharing
 import Synchronization
@@ -11,6 +12,7 @@ final class FailingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
     case failsOutputs
   }
 
+  let thrown = TestSignal()
   private let inner: any ScreenSharingTileEncoder
   private let failure = Mutex(Failure.none)
   private struct Receiver {
@@ -37,7 +39,10 @@ final class FailingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   }
 
   func encode(_ request: ScreenSharingTileEncodeRequest) throws {
-    if failure.withLock({ $0 }) == .throwsOnEncode { throw ScreenSharingError.unavailable("Forced failure.") }
+    if failure.withLock({ $0 }) == .throwsOnEncode {
+      thrown.signal()
+      throw ScreenSharingError.unavailable("Forced failure.")
+    }
 
     try inner.encode(request)
   }
@@ -55,10 +60,11 @@ final class FailingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
 
   private static func failed(_ result: ScreenSharingTileEncoderOutput) -> ScreenSharingTileEncoderOutput {
     switch result {
-    case .tile(let tile): .failed(tile: tile.tile, refresh: tile.refresh, message: "Forced failure.")
-    case .dropped(let tile, let refresh), .failed(let tile, let refresh, _):
-      .failed(tile: tile, refresh: refresh, message: "Forced failure.")
-    case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Forced failure.")
+    case .tile(let tile):
+      .failed(tile: tile.tile, refresh: tile.refresh, message: "Forced failure.", repeatsCapture: tile.repeatsCapture)
+    case .dropped(let tile, let refresh, let repeats), .failed(let tile, let refresh, _, let repeats):
+      .failed(tile: tile, refresh: refresh, message: "Forced failure.", repeatsCapture: repeats)
+    case .unchanged(let tile, _): .failed(tile: tile, refresh: nil, message: "Forced failure.", repeatsCapture: true)
     case .keyframeNeeded: result
     }
   }
