@@ -39,7 +39,8 @@ import {
   accountsAtTheScreen,
   type AtTheScreen,
   type GraphicalSession,
-  ownGraphicalSession
+  ownGraphicalSession,
+  sameDisplay
 } from "./screen-session.js"
 
 export interface ScreenStatusOptions {
@@ -106,6 +107,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   let seenAt: number | undefined
   let problem: string | undefined
   let retryAt: number | undefined
+  let retryFor: number | undefined
   let notifiedAt: number | undefined
   let installed: Known<ScreenPrograms> | undefined
   let knownSudo: Known<DesktopSudo> | undefined
@@ -195,6 +197,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   const start = async (socket: string, found: GraphicalSession): Promise<void> => {
     problem = await whyItDidNotStart(socket, found)
     retryAt = problem === undefined ? undefined : now() + retryAfterMs
+    retryFor = found.process
     startedAt = problem === undefined ? now() : undefined
     changed()
   }
@@ -207,14 +210,18 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return stopped
   }
 
-  const noteAQuickDeath = (): void => {
+  const noteAQuickDeath = (found: GraphicalSession | undefined): void => {
     const diedSoonAfterStarting = startedAt !== undefined && now() - startedAt < diesTooSoonMs
     startedAt = undefined
     if (!diedSoonAfterStarting) return
 
     problem = diedSoon
     retryAt = now() + retryAfterMs
+    retryFor = found?.process
   }
+
+  const waitsToRetry = (found: GraphicalSession): boolean =>
+    retryAt !== undefined && now() < retryAt && retryFor === found.process
 
   const nothingToShare = (socket: string): void => {
     problem = undefined
@@ -230,7 +237,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   ): boolean =>
     running.socket === socket &&
     found?.kind === "x11" &&
-    running.display === found.display &&
+    sameDisplay(running.display, found.display) &&
     locate(socket).problem === undefined
 
   const stopWhatThisServerStarted = async (): Promise<void> => {
@@ -249,9 +256,9 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     const running = helpers.running()
     if (running !== undefined && isStillShown(running, found, socket)) return
     if (running !== undefined && !(await stop(running))) return
-    if (running === undefined) noteAQuickDeath()
+    if (running === undefined) noteAQuickDeath(found)
     if (found === undefined) return nothingToShare(socket)
-    if (retryAt !== undefined && now() < retryAt) return
+    if (waitsToRetry(found)) return
 
     await start(socket, found)
   }
@@ -341,10 +348,12 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     const socket = recordedSocket()
     if (socket === undefined) return status()
 
-    forgetTheScreen()
     const running = helpers.running()
-    if (running !== undefined) await stop(running)
-    else nothingToShare(socket)
+    if (running !== undefined && !(await stop(running)))
+      throw new HttpFailure(500, stillRunning(running.pid))
+
+    forgetTheScreen()
+    nothingToShare(socket)
     changed()
     return status()
   }

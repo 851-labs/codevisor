@@ -77,6 +77,17 @@ describe("the graphical session the server's account has at the screen", () => {
     expect(ownGraphicalSession(system)?.display).toBe(":1")
   })
 
+  it("takes the display who reported where logind can't be asked, with or without a seat", () => {
+    const noSeat = { DISPLAY: ":0", XAUTHORITY: "/home/alice/.Xauthority" }
+    const system = at(
+      { 400: { env: { ...noSeat, DISPLAY: ":1" }, started: 900 }, 401: { env: noSeat } },
+      ["X0", "X1"]
+    )
+
+    expect(ownGraphicalSession(system, { display: ":0" })?.process).toBe(401)
+    expect(ownGraphicalSession(system, { display: ":2" })).toBeUndefined()
+  })
+
   describe("when logind names the session at the screen", () => {
     const leftOver = { env: atTheMonitor, session: "4", started: 50 }
     const newSession = { env: { ...atTheMonitor, DISPLAY: ":1" }, session: "9", started: 10 }

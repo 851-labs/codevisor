@@ -15,6 +15,7 @@ export interface FakeMachineOptions {
   readonly socketVanishesAfterPolls?: number
   readonly alive?: ReadonlyArray<number>
   readonly ignoresSigterm?: ReadonlyArray<number>
+  readonly unkillable?: ReadonlyArray<number>
   readonly holds?: { readonly prefix: string; readonly until: Promise<void> }
   readonly sessionNeverSettles?: boolean
 }
@@ -135,6 +136,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       if (signal === "SIGKILL") killed.push(pid)
       else terminated.push(pid)
       if (signal === "SIGTERM" && options.ignoresSigterm?.includes(pid) === true) return
+      if (options.unkillable?.includes(pid) === true) return
       alive.delete(pid)
       files.delete(`/proc/${pid}/cmdline`)
     },

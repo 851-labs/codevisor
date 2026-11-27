@@ -349,6 +349,43 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(machine.files.get(CONFIG)).toBe(text)
   })
 
+  it("keeps a helper that shows the same display, written :0.0 instead of :0", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.logIn({ ...aliceAtTheMonitor, DISPLAY: ":0.0" })
+    await machine.screen.follow()
+
+    expect([machine.spawned.length, machine.terminated]).toEqual([1, []])
+  })
+
+  it("starts sharing a new login at once, without the wait a quick death in the old one set", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+    machine.system.terminate(helper)
+    await machine.screen.follow()
+    expect(machine.spawned).toHaveLength(1)
+
+    machine.logIn(aliceAtTheMonitor, "x11", { process: 401, session: "5" })
+    await machine.screen.follow()
+
+    expect(machine.spawned).toHaveLength(2)
+  })
+
+  it("refuses to forget the screen while its helper can't be stopped", async () => {
+    const machine = workstation({ unkillable: [helper] })
+    machine.logIn()
+    await machine.screen.setUp()
+
+    expect(await refusal(machine.screen.remove())).toMatchObject({
+      status: 500,
+      message: "x0vncserver (process 4242) doesn't stop, even when killed"
+    })
+    expect(JSON.parse(machine.files.get(CONFIG) ?? "").displays).toEqual([screenEntry])
+  })
+
   it("stops sharing and forgets the screen when it is removed, keeping the desktop", async () => {
     const machine = workstation({
       files: { [CONFIG]: JSON.stringify({ displays: [desktopEntry] }) }

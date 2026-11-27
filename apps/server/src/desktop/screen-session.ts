@@ -78,6 +78,8 @@ const belongs = (
 ): boolean => {
   if (search.session !== undefined)
     return isInSession(system, pid, search.session) && showsTheDisplay(env, search.display)
+  if (search.display !== undefined)
+    return sameDisplay(env["DISPLAY"], search.display) && isLive(system, env["DISPLAY"])
   if ((env["XDG_SEAT"] ?? "") === "") return false
 
   return env["WAYLAND_DISPLAY"] !== undefined || isLive(system, env["DISPLAY"])
@@ -86,7 +88,7 @@ const belongs = (
 const showsTheDisplay = (env: Readonly<Record<string, string>>, display?: string): boolean =>
   display === undefined || env["DISPLAY"] === undefined || sameDisplay(env["DISPLAY"], display)
 
-const sameDisplay = (one: string | undefined, other: string | undefined): boolean =>
+export const sameDisplay = (one: string | undefined, other: string | undefined): boolean =>
   one !== undefined && other !== undefined && withoutScreen(one) === withoutScreen(other)
 
 const withoutScreen = (display: string): string => display.replace(/^(:\d+)\.\d+$/, "$1")

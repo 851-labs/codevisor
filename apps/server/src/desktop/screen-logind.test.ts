@@ -45,6 +45,19 @@ describe("who is logged in at the machine's screen", () => {
     ])
   })
 
+  it("leaves out a session switched to the background, and takes the account's active one", async () => {
+    const system = asking({
+      ...listing(" 2 1000 alice seat0 tty2\n 3 1001 bob seat0 tty3\n 4 1000 alice seat0 tty4\n"),
+      [shown("2")]: session({ Id: "2", Name: "alice", ...local, State: "online", Type: "wayland" }),
+      [shown("3")]: session({ Id: "3", Name: "bob", ...local, State: "online", Type: "x11" }),
+      [shown("4")]: session({ Id: "4", Name: "alice", ...local, Type: "x11", Display: ":1" })
+    })
+
+    expect(await accountsAtTheScreen(system)).toEqual([
+      { account: "alice", type: "x11", session: "4", display: ":1" }
+    ])
+  })
+
   it("leaves out a text-console login, which isn't at the graphical screen", async () => {
     const system = asking({
       ...listing(" 3 1002 dave seat0 tty1\n"),
@@ -91,7 +104,7 @@ describe("who is logged in at the machine's screen", () => {
       }
     })
 
-    expect(await accountsAtTheScreen(system)).toEqual([{ account: "alice" }])
+    expect(await accountsAtTheScreen(system)).toEqual([{ account: "alice", display: ":0" }])
   })
 
   it("is unknown when neither can be asked", async () => {

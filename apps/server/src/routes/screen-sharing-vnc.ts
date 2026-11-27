@@ -175,8 +175,7 @@ const capabilities = (
   }))
   const reachable = looked.filter((one) => one.problem === undefined)
   const unavailable = [...known, ...looked.flatMap(unavailableDisplay)]
-  const first = unavailable[0]
-  if (reachable.length === 0 && first !== undefined) return vncReply("failed", first.problem)
+  if (reachable.length === 0 && unavailable.length > 0) return noneCanBeViewed(unavailable)
 
   return {
     version: 1,
@@ -186,6 +185,16 @@ const capabilities = (
     displays: reachable.map((one) => listed(one.display)),
     ...(unavailable.length === 0 ? {} : { unavailable })
   }
+}
+
+const noneCanBeViewed = (
+  unavailable: ReadonlyArray<ScreenSharingUnavailableDisplay>
+): ScreenSharingReply => {
+  const [only] = unavailable
+  if (unavailable.length === 1 && only !== undefined) return vncReply("failed", only.problem)
+
+  const why = unavailable.map((display) => `${display.name}: ${display.problem}`).join("\n")
+  return { ...vncReply("failed", why), unavailable }
 }
 
 const unavailableDisplay = ({

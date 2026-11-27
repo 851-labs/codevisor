@@ -72,7 +72,7 @@ const isALocalSeatedLogin = (fields: ReadonlyMap<string, string>): boolean =>
   (fields.get("Seat") ?? "") !== "" &&
   fields.get("Class") === "user" &&
   fields.get("Remote") !== "yes" &&
-  fields.get("State") !== "closing"
+  fields.get("State") === "active"
 
 const graphicalSide = (
   system: LogindSystem,
@@ -120,17 +120,18 @@ const loggedInOnADisplay = async (
   const listed = await system.run("who", [])
   if (listed.code !== 0) return undefined
 
-  const accounts = [
-    ...new Set(
-      listed.output
-        .split("\n")
-        .map((line) => line.trim().split(/\s+/))
-        .filter((fields) => fields.some((field) => /^\(?:\d/.test(field)))
-        .map((fields) => fields[0] ?? "")
-        .filter((account) => account !== "" && !greeters.has(account))
-    )
-  ]
-  return accounts.map((account) => ({ account }))
+  const found = listed.output
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .flatMap((fields) => onADisplay(fields))
+    .filter((entry) => !greeters.has(entry.account))
+  return uniqueAccounts(found)
+}
+
+const onADisplay = (fields: ReadonlyArray<string>): ReadonlyArray<AtTheScreen> => {
+  const account = fields[0] ?? ""
+  const display = fields.map((field) => /^\(?(:\d+(\.\d+)?)\)?$/.exec(field)?.[1]).find(Boolean)
+  return account === "" || display === undefined ? [] : [{ account, display }]
 }
 
 const uniqueAccounts = (found: ReadonlyArray<AtTheScreen>): ReadonlyArray<AtTheScreen> =>

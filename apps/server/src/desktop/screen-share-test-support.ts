@@ -34,13 +34,21 @@ export const aliceAtTheMonitor = {
   DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1001/bus"
 }
 
-export const seated = (account: string, type = "x11", display = ":0") => ({
-  "loginctl list-sessions --no-legend": { code: 0, output: ` 2 1002 ${account} seat0 tty2\n` },
-  "loginctl show-session 2 -p Id -p Name -p Seat -p Class -p Remote -p State -p Type -p Display": {
-    code: 0,
-    output: `Id=2\nName=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\nType=${type}\nDisplay=${type === "x11" ? display : ""}\n`
-  }
+export const seated = (account: string, type = "x11", display = ":0", id = "2") => ({
+  "loginctl list-sessions --no-legend": { code: 0, output: ` ${id} 1002 ${account} seat0 tty2\n` },
+  [`loginctl show-session ${id} -p Id -p Name -p Seat -p Class -p Remote -p State -p Type -p Display`]:
+    {
+      code: 0,
+      output: `Id=${id}\nName=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\nType=${type}\nDisplay=${type === "x11" ? display : ""}\n`
+    }
 })
+
+export interface Login {
+  readonly process: number
+  readonly session: string
+}
+
+const firstLogin: Login = { process: sessionProcess, session: "2" }
 export const someoneElseIsSeated = seated("alice")
 const nobodyIsSeated = { "loginctl list-sessions --no-legend": { code: 0, output: "" } }
 
@@ -52,7 +60,7 @@ export const workstation = (scene: Scene = {}) => {
   const logind: NonNullable<FakeMachineOptions["results"]> = { ...nobodyIsSeated, ...scene.results }
   const machine = fakeMachine({
     programs: withTheScreenPrograms,
-    folders: { "/proc": [String(sessionProcess)] },
+    folders: { "/proc": [String(sessionProcess), String(sessionProcess + 1)] },
     ...scene,
     results: logind,
     files: { ...UBUNTU, ...scene.files }
@@ -73,15 +81,16 @@ export const workstation = (scene: Scene = {}) => {
   }
   const logIn = (
     env: Record<string, string> = aliceAtTheMonitor,
-    type = env["WAYLAND_DISPLAY"] === undefined ? "x11" : "wayland"
+    type = env["WAYLAND_DISPLAY"] === undefined ? "x11" : "wayland",
+    login: Login = firstLogin
   ): void => {
-    machine.files.set(`/proc/${sessionProcess}/status`, "Uid:\t1001\t1001\n")
-    machine.files.set(`/proc/${sessionProcess}/environ`, environ(env))
+    machine.files.set(`/proc/${login.process}/status`, "Uid:\t1001\t1001\n")
+    machine.files.set(`/proc/${login.process}/environ`, environ(env))
     machine.files.set(
-      `/proc/${sessionProcess}/cgroup`,
-      "0::/user.slice/user-1001.slice/session-2.scope\n"
+      `/proc/${login.process}/cgroup`,
+      `0::/user.slice/user-1001.slice/session-${login.session}.scope\n`
     )
-    Object.assign(logind, seated("codevisor", type, env["DISPLAY"]))
+    Object.assign(logind, seated("codevisor", type, env["DISPLAY"], login.session))
   }
   const leaveTheScreen = (): void => void Object.assign(logind, nobodyIsSeated)
   const endTheSession = (): void => {

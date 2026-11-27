@@ -170,18 +170,16 @@ describe("a Linux machine with a desktop and a real screen", () => {
     })
   })
 
-  it("fails with the desktop's own reason when neither can be viewed", async () => {
+  it("fails naming each display's own reason when neither can be viewed", async () => {
     const machine = await machineWith({
       desktop: join(privateDirectory(), "codevisor-desktop.sock"),
       screen: join(privateDirectory(), "codevisor-screen.sock")
     })
 
-    expect(await machine.capabilities()).toEqual({
-      version: 1,
+    expect(await machine.capabilities()).toMatchObject({
       status: "failed",
-      provider: "vnc",
-      message: "The desktop on this machine isn't running.",
-      displays: []
+      message: `Desktop: The desktop on this machine isn't running.\nScreen: ${notShown}`,
+      unavailable: [{ id: "vnc:desktop" }, { id: "vnc:screen" }]
     })
   })
 
