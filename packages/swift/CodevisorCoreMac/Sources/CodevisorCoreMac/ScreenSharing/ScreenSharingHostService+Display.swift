@@ -167,11 +167,20 @@ extension ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  func followDisplayRefresh(_ session: ScreenSharingHostSession) {
+    let previous = session.resizing
+    session.resizing = Task { [weak session] in
+      await previous?.value
+      guard let session, !session.stopping, !Task.isCancelled else { return }
+      try? await session.capture.followDisplayRefresh()
+    }
+  }
+
   func screenParametersChanged() {
     guard let current else { return }
     noteSharedDisplaySize(current)
     Task { await refreshDisplays(of: current) }
-    Task { [capture = current.capture] in try? await capture.followDisplayRefresh() }
+    followDisplayRefresh(current)
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = onlineDisplays()
     guard

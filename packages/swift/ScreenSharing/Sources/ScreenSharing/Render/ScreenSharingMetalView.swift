@@ -139,7 +139,12 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       }
       screenParametersObserver = NotificationCenter.default.addObserver(
         forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.reportScreenHighDynamicRange() } }
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          self?.matchDisplayRefresh()
+          self?.reportScreenHighDynamicRange()
+        }
+      }
     }
 
     private func reportScreenHighDynamicRange() {
@@ -358,8 +363,8 @@ package final class TextureFrame: @unchecked Sendable {
             return nil
           }
           let waitedNs = acquisitionEnded - acquisitionStarted
-          let newer = self.newer(than: request, in: range, afterWaitingNs: waitedNs)
-          if let replacement = newer.replacement { (frame, textures) = replacement }
+          let replacement = self.newer(than: request, in: range, afterWaitingNs: waitedNs)
+          if let replacement { (frame, textures) = replacement }
           let pass = Self.pass(into: drawable, clear: request.geometry.clearColor)
           guard
             let encoded = encoder.encode(textures, into: Surface(drawable: drawable, pass: pass))
@@ -368,8 +373,7 @@ package final class TextureFrame: @unchecked Sendable {
           return .init(
             submission: ScreenSharingMetalView.MetalSubmission(
               buffer: encoded.buffer, drawable: drawable, metrics: metrics),
-            retained: encoded.retained, videoSize: frame.size, replacement: newer.replacement?.0,
-            deferred: newer.deferred, drawableWaitNs: waitedNs)
+            retained: encoded.retained, videoSize: frame.size, replacement: replacement?.0, drawableWaitNs: waitedNs)
         }
         completion(prepared)
       }
@@ -377,17 +381,15 @@ package final class TextureFrame: @unchecked Sendable {
 
     func newer(
       than request: ScreenSharingPreparationRequest, in range: ScreenSharingDynamicRange, afterWaitingNs waitedNs: Int64
-    ) -> (
-      replacement: (ScreenSharingVideoFrame, ScreenSharingMetalEncoder.Textures)?, deferred: ScreenSharingVideoFrame?
-    ) {
-      guard waitedNs > Self.replacesAfterWaitNs, let newer = request.newer?() else { return (nil, nil) }
+    ) -> (ScreenSharingVideoFrame, ScreenSharingMetalEncoder.Textures)? {
+      guard waitedNs > Self.replacesAfterWaitNs, let newer = request.newer?() else { return nil }
       guard let textures = encoder.textures(for: newer), textures.dynamicRange == range else {
         metrics.increment("renderFramesDeferredAfterDrawableWait")
-        return (nil, newer)
+        return nil
       }
 
       metrics.increment("renderFramesReplacedAfterDrawableWait")
-      return ((newer, textures), nil)
+      return (newer, textures)
     }
 
     private static func pass(into drawable: any CAMetalDrawable, clear: SIMD4<Double>) -> MTLRenderPassDescriptor {

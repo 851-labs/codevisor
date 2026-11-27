@@ -53,7 +53,7 @@
 
       let result = worker.newer(than: try Self.request(newer: newer), in: .standard, afterWaitingNs: 400_000)
 
-      #expect(result.replacement == nil && result.deferred == nil && newer.taken == 0)
+      #expect(result == nil && newer.taken == 0)
     }
 
     @Test func aFrameThatArrivedDuringALongDrawableWaitIsDrawnInstead() throws {
@@ -61,16 +61,16 @@
 
       let result = worker.newer(than: try Self.request(newer: newer), in: .standard, afterWaitingNs: 14_700_000)
 
-      #expect(result.replacement?.0.rtpTimestamp == 2 && result.deferred == nil && newer.taken == 1)
+      #expect(result?.0.rtpTimestamp == 2 && newer.taken == 1)
       #expect(metrics.counter("renderFramesReplacedAfterDrawableWait") == 1)
     }
 
-    @Test func aNewerFrameInAnotherDynamicRangeIsHandedBackForTheNextDraw() throws {
+    @Test func aNewerFrameInAnotherDynamicRangeIsLeftForTheNextDraw() throws {
       let newer = Newer(try Self.frame(format: ScreenSharingDynamicRange.highCapturePixelFormat, rtp: 2))
 
       let result = worker.newer(than: try Self.request(newer: newer), in: .standard, afterWaitingNs: 14_700_000)
 
-      #expect(result.replacement == nil && result.deferred?.rtpTimestamp == 2)
+      #expect(result == nil && newer.taken == 1)
       #expect(metrics.counter("renderFramesDeferredAfterDrawableWait") == 1)
     }
   }

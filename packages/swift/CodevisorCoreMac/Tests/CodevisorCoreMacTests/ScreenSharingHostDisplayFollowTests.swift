@@ -244,4 +244,31 @@ struct ScreenSharingHostDisplayFollowTests {
       #expect(session.displayFollow == nil && session.displayID == Fixture.displayID(of: Self.wide))
     }
   }
+
+  @Test func aRefreshRateChangeIsAppliedAfterTheCaptureResizeInFlight() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      let (released, release) = AsyncStream<Void>.makeStream()
+      let order = Order()
+      let resize = Task<Void, Never> {
+        for await _ in released { break }
+        order.note("resized")
+      }
+      session.resizing = resize
+
+      mac.host.followDisplayRefresh(session)
+      let follow = try #require(session.resizing)
+      release.yield()
+      await follow.value
+      order.note("followed")
+
+      #expect(follow != resize)
+      #expect(order.notes == ["resized", "followed"])
+    }
+  }
+
+  @MainActor private final class Order {
+    private(set) var notes: [String] = []
+    func note(_ note: String) { notes.append(note) }
+  }
 }

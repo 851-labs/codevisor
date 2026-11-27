@@ -63,18 +63,20 @@
 
     package func start(
       filter: SCContentFilter, configuration: ScreenSharingVideoConfiguration, sink: any ScreenSharingFrameSink,
-      metrics: ScreenSharingMetrics
+      metrics: ScreenSharingMetrics, displayID: CGDirectDisplayID? = nil
     ) async throws {
-      try await start(target: filter, configuration: configuration, sink: sink, metrics: metrics)
+      try await start(
+        target: filter, configuration: configuration, sink: sink, metrics: metrics,
+        displayRefresh: { displayID.flatMap(ScreenSharingDisplayRefresh.hz(of:)) })
     }
 
     func start(
       target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics,
-      displayRefresh: (@MainActor () -> Double?)? = nil
+      displayRefresh: @escaping @MainActor () -> Double? = { nil }
     ) async throws {
       guard stream == nil, !starting else { throw ScreenSharingError.invalid("Capture is already running.") }
-      if let displayRefresh { self.displayRefresh = displayRefresh }
+      self.displayRefresh = displayRefresh
       generation += 1
       let generation = generation
       starting = true
@@ -146,12 +148,13 @@
       guard following != cadence, stream != nil else { return }
 
       let previous = cadence
+      let generation = generation
       cadence = following
       do { try await reconfigure() } catch {
-        cadence = previous
+        if self.generation == generation, cadence == following { cadence = previous }
         throw error
       }
-      if let metrics = output?.metrics { label(cadence, on: metrics) }
+      if self.generation == generation, let metrics = output?.metrics { label(cadence, on: metrics) }
     }
 
     private func label(_ cadence: ScreenSharingCaptureCadence, on metrics: ScreenSharingMetrics) {
@@ -195,7 +198,9 @@
       do {
         if captures, stream != nil, let restart, let video {
           try await stop()
-          try await start(target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics)
+          try await start(
+            target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics,
+            displayRefresh: displayRefresh)
         } else {
           try await reconfigure()
         }

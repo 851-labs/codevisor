@@ -66,16 +66,23 @@ struct ScreenSharingRenderCatchUpTests {
       }
     }
 
-    func finish(waitedNs: Int64, takingNewer: Bool = false, deferringNewer: Bool = false) -> Submission? {
+    func finish(
+      waitedNs: Int64, takingNewer: Bool = false, deferringNewer: Bool = false, failing: Bool = false
+    ) -> Submission? {
       guard let (request, completion) = lock.withLock({ outstanding.isEmpty ? nil : outstanding.removeFirst() })
       else { return nil }
 
       let submission = Submission()
-      let newer = takingNewer || deferringNewer ? request.newer?() : nil
+      let newer = takingNewer || deferringNewer || failing ? request.newer?() : nil
+      guard !failing else {
+        completion(nil)
+        return nil
+      }
+
       completion(
         .init(
           submission: submission, retained: Retained(), videoSize: CGSize(width: 64, height: 64),
-          replacement: takingNewer ? newer : nil, deferred: deferringNewer ? newer : nil, drawableWaitNs: waitedNs))
+          replacement: takingNewer ? newer : nil, drawableWaitNs: waitedNs))
       return submission
     }
   }
@@ -224,5 +231,33 @@ struct ScreenSharingRenderCatchUpTests {
     #expect(f.draw() && f.preparer.requested == [1, 2])
     f.preparer.finish(waitedNs: 0)?.finish()
     #expect(f.presented == [1, 2])
+  }
+
+  @Test func aNewerFrameTakenForADrawThatFailedIsShownNext() throws {
+    let f = Fixture()
+    f.time.advance(to: 1_000_000_000)
+    f.mailbox.put(try f.frame(1))
+    #expect(f.draw())
+    f.mailbox.put(try f.frame(2))
+
+    _ = f.preparer.finish(waitedNs: Self.starvedWaitNs, failing: true)
+
+    #expect(!f.mailbox.isHolding && f.draw())
+    #expect(f.preparer.requested == [1, 2])
+  }
+
+  @Test func aRedrawAskedForDuringAHoldIsDrawnWhenTheHoldEnds() throws {
+    let f = Fixture()
+    for index in Int64(0)...4 { try f.arrive(UInt32(index), at: index) }
+    try f.arrive(5, at: 5, waitedNs: Self.starvedWaitNs)
+    f.time.advance(to: 1_000_000_000 + 5 * Self.periodNs + 2_000_000)
+    f.coordinator.setNeedsRedraw()
+    #expect(!f.draw() && f.time.pending == 1)
+    let drawsBefore = f.draws.count
+
+    f.time.advance(to: 1_000_000_000 + 8 * Self.periodNs)
+
+    #expect(f.draws.count == drawsBefore + 1 && f.draw())
+    #expect(f.preparer.requested.last == 5)
   }
 }

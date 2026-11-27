@@ -4,7 +4,7 @@
 
   @testable import ScreenSharing
 
-  @Suite @MainActor struct ScreenSharingCaptureDisplayRefreshTests {
+  @Suite(.timeLimit(.minutes(1))) @MainActor struct ScreenSharingCaptureDisplayRefreshTests {
     private final class Refresh {
       var hz: Double?
       init(_ hz: Double?) { self.hz = hz }
@@ -110,6 +110,36 @@
           cadence: .init(displayRefreshHz: 60))
         #expect(config.minimumFrameInterval == Self.everyRefresh)
       }
+    }
+
+    @Test func aStartWithoutARefreshSourceDoesNotKeepTheLastDisplays() async throws {
+      let fixture = CaptureFixture()
+      try await start(fixture, refresh: Refresh(60))
+      try await fixture.capture.stop()
+
+      try await fixture.start()
+
+      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: nil))
+    }
+
+    @Test func aFollowThatFailsAfterARestartKeepsTheNewCaptureCadence() async throws {
+      let fixture = CaptureFixture()
+      let refresh = Refresh(120)
+      try await start(fixture, refresh: refresh)
+      let held = CaptureGate()
+      fixture.stream.holdUpdate = held
+      fixture.stream.updateFailure = CancellationError()
+      refresh.hz = 60
+      let follow = Task { @MainActor in try await fixture.capture.followDisplayRefresh() }
+      await held.entered.wait()
+
+      try await fixture.capture.stop()
+      fixture.stream.holdStart = nil
+      try await start(fixture, refresh: Refresh(144))
+      held.release()
+      _ = try? await follow.value
+
+      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: 144))
     }
   }
 #endif
