@@ -39,12 +39,13 @@ impl Arrived {
     }
 
     pub fn note_lost(&mut self, position: u64, bytes: u64) -> bool {
-        let floor = self.seen.iter().rev().nth(1).map_or(0, |previous| previous.carried);
-        let Some(newest) = self.seen.back_mut().filter(|newest| position <= newest.position) else {
+        if self.seen.back().is_none_or(|newest| position > newest.position) {
             return false;
-        };
+        }
         self.lost = self.lost.saturating_add(bytes);
-        newest.carried = newest.carried.saturating_sub(bytes).max(floor.min(newest.carried));
+        for sighting in self.seen.iter_mut().filter(|sighting| sighting.position >= position) {
+            sighting.carried = sighting.carried.saturating_sub(bytes);
+        }
         true
     }
 
@@ -209,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn more_reported_lost_than_the_newest_sighting_advanced_leaves_it_at_the_one_before() {
+    fn more_reported_lost_than_was_carried_gives_no_rate_instead_of_wrapping() {
         let start = Instant::now();
         let mut arrived = Arrived::default();
         arrived.restart(start, 0);
@@ -217,7 +218,18 @@ mod tests {
         arrived.note(start + 200 * MS, 25_000);
         assert!(arrived.note_lost(1, u64::MAX));
         assert!(arrived.note_lost(2, 768_000));
-        assert_eq!(arrived.reached(start + 300 * MS, None), Some(31_250), "12.5 KB carried in 200 ms");
+        assert_eq!(arrived.reached(start + 300 * MS, None), None);
         assert_eq!(arrived.reached(start + 300 * MS, Some(4e6)), Some(75_000));
+    }
+
+    #[test]
+    fn a_loss_sent_before_every_remembered_sighting_leaves_their_rate_alone() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0);
+        arrived.note(start + 100 * MS, 100_000);
+        arrived.note(start + 700 * MS, 200_000);
+        assert!(arrived.note_lost(50_000, 30_000));
+        assert_eq!(arrived.reached(start + 800 * MS, None), Some(216_666), "100 KB in the 600 ms it remembers");
     }
 }

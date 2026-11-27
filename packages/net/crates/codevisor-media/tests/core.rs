@@ -1464,7 +1464,16 @@ fn a_resend_lost_behind_a_slow_links_queue_is_sent_again_once_the_queue_has_pass
 fn a_probe_for_a_frame_the_viewer_already_answered_doesnt_delay_the_next_tail_probe() {
     let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
     sim.stale_rtt = Some(100 * MS);
-    sim.drop_when(lost_times(|header| u32::from(header.frame == 0 && (20..150).contains(&header.index))));
+    let mut lost_once = lost_times(|header| u32::from(header.frame == 0 && (20..150).contains(&header.index)));
+    let mut acked = false;
+    sim.drop_when(move |direction, datagram| match direction {
+        Direction::ToViewer => lost_once(direction, datagram),
+        Direction::ToHost if is_kind(datagram, Kind::Feedback) && !acked => {
+            acked = true;
+            true
+        }
+        Direction::ToHost => false,
+    });
     let keyframe = payload(1, 190_000);
     sim.send(OutgoingFrame { keyframe: true, ..frame(0, &keyframe) });
     delivered_after(&mut sim, &keyframe, 1, Duration::from_secs(12)).expect("the keyframe arrives");
@@ -1496,4 +1505,24 @@ fn a_frame_missing_two_packets_isnt_given_up_while_its_resends_wait_behind_other
         assert_eq!(lost_on_the_host(&sim), 0, "{tiles} tiles");
         assert_eq!(delivered, usize::from(tiles), "{tiles} tiles");
     }
+}
+
+#[test]
+fn a_resend_held_behind_a_slow_links_queue_keeps_its_frame_alive_while_the_viewer_asks_for_it() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(Duration::from_millis(60));
+    sim.drop_when(lost_times(|header| match (header.stream, header.index) {
+        (0, 140) => 2,
+        (0, 20..150) => 1,
+        _ => 0,
+    }));
+    let data = payload(1, 190_000);
+    for tile in 0..4 {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    let waited = delivered_after(&mut sim, &data, 4, Duration::from_secs(20));
+    let given_up_with_resends_held = sim.host_events.contains(&Event::FrameLost { stream: 0, frame: 0 });
+
+    assert!(waited.is_some(), "the four keyframes never arrived");
+    assert!(!given_up_with_resends_held, "the host gave a keyframe up while the viewer was still asking for its resends");
 }

@@ -56,8 +56,11 @@ no jitter buffer and no queue deeper than one frame.
      the 5 s, so a keyframe missing two packets is still there when their resends come through behind two more
      tiles' keyframes (it was given up 0.5 s after its last packet). The host counts a NACK that names a packet it wasn't asked
      for before as an answer: its probe count starts again and the frame gets the time everything then waiting needs
-     to cross. Repeats of the same request don't count, so a packet that never gets through still ends in a lost
-     frame. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
+     to cross. Repeats of the same request count only while the host is holding that packet's resend behind a deep
+     queue (below): the viewer is still waiting for it, and without that a frame on 1 Mbit/s with four keyframes in
+     the queue was given up by the host while its resends were on their way. Otherwise repeats don't count, so a
+     packet that never gets through still ends in a lost frame, and a held one ends there once the viewer gives
+     its frame up. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
      flight could have crossed at the rate the viewer acknowledged over the last 0.5 s (300 kbit/s with no
      acknowledgement in that time, never over the estimate, at most 5 s), counted from the frame's last packet or
      the viewer's last answer, whichever is later. Before, the viewer gave a frame up one

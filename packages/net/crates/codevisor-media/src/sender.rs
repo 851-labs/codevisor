@@ -456,6 +456,7 @@ impl Sender {
         let mut first_losses = 0;
         let mut lost_bytes = 0;
         let mut repeated = 0;
+        let mut held = 0;
         for index in named() {
             if frame.resends[index] == Resend::Never {
                 first_losses += 1;
@@ -471,6 +472,7 @@ impl Sender {
                 Resend::Queued => true,
                 Resend::Sent { at, position, queued_deep } => {
                     let on_its_way = queued_deep && reached.is_some_and(|reached| reached < position);
+                    held += u32::from(on_its_way && now >= at + self.rtt / 2 && now < at + MAX_CROSSING);
                     now < at + self.rtt / 2 || on_its_way && now < at + MAX_CROSSING
                 }
             };
@@ -484,21 +486,19 @@ impl Sender {
             requested += 1;
         }
         stats.retransmissions_skipped += repeated;
-        if first_losses > 0 {
+        if first_losses > 0 || held > 0 {
             frame.heard = Some(now);
             frame.unanswered = 0;
             frame.expires = None;
             frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
-            self.loss.nacked += first_losses;
         }
+        self.loss.nacked += first_losses;
         if first_losses > 0 || requested > 0 {
             self.estimator.on_lost(now, lost_bytes);
             self.last_loss = Some(now);
-        }
-        if requested > 0 {
-            stats.packets_retransmitted += requested;
             self.update_pacing_rate(now);
         }
+        stats.packets_retransmitted += requested;
     }
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
