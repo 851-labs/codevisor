@@ -5,6 +5,11 @@ import { ownGraphicalSession } from "./screen-session.js"
 
 const atTheMonitor = { XDG_SEAT: "seat0", DISPLAY: ":0", XAUTHORITY: "/home/alice/.Xauthority" }
 const bus = "unix:path=/run/user/1000/bus"
+const onDisplay = (display: string) => ({
+  WAYLAND_DISPLAY: display,
+  XDG_RUNTIME_DIR: "/run/user/1000"
+})
+const serving = (display: string) => [`/run/user/1000/${display}.lock`]
 const at = (processes: Record<number, Process>, liveDisplays?: ReadonlyArray<string>) =>
   machine({ processes, ...(liveDisplays === undefined ? {} : { liveDisplays }) })
 
@@ -126,6 +131,119 @@ describe("the graphical session the server's account has at the screen", () => {
     it("finds nothing when no process of that session is left", () => {
       expect(ownGraphicalSession(at({ 400: leftOver }), { session: "9" })).toBeUndefined()
     })
+  })
+
+  it.each([
+    ["wlroots", "sway"],
+    ["wlroots", "Hyprland"],
+    ["wlroots", "labwc"],
+    ["wayland", "gnome-shell"],
+    ["wayland", "kwin_wayland"]
+  ])("calls a Wayland session %s when its compositor is %s", (kind, comm) => {
+    const system = at({
+      400: { env: { ...onDisplay("wayland-1"), DBUS_SESSION_BUS_ADDRESS: bus }, session: "9" },
+      401: { comm, fds: serving("wayland-1") }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe(kind)
+  })
+
+  it("finds the compositor by its display alone, also when an app's parent is not the compositor", () => {
+    const system = at({
+      400: { env: onDisplay("wayland-1"), session: "9" },
+      401: { comm: "sway", fds: ["/dev/null", "/run/user/1000/wayland-2.lock"] },
+      402: { comm: "river", fds: ["/dev/null", ...serving("wayland-1")] }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe("wlroots")
+  })
+
+  it("doesn't take a compositor that serves another display, or another account's, for the session's", () => {
+    const system = at({
+      400: { env: onDisplay("wayland-1"), session: "9" },
+      401: { comm: "sway", fds: serving("wayland-2") },
+      402: { comm: "sway", uid: 1001, fds: serving("wayland-1") }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9" })?.kind).toBe("wayland")
+  })
+
+  it("calls a GNOME session Wayland and shares its own display, even with a Sway window nested in it", () => {
+    const outer = { ...onDisplay("wayland-0"), DBUS_SESSION_BUS_ADDRESS: bus }
+    const nested = { ...onDisplay("wayland-1"), DBUS_SESSION_BUS_ADDRESS: bus }
+    const system = at({
+      300: { comm: "gnome-shell", fds: serving("wayland-0") },
+      400: { env: outer, session: "9", started: 2 },
+      401: { env: outer, comm: "sway", session: "9", fds: serving("wayland-1"), started: 3 },
+      402: { env: nested, session: "9", started: 5 }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9", type: "wayland" })).toMatchObject({
+      kind: "wayland",
+      env: { WAYLAND_DISPLAY: "wayland-0" }
+    })
+  })
+
+  it("takes a Wayland session's Wayland processes even when only XWayland apps have the bus", () => {
+    const system = at({
+      400: { env: onDisplay("wayland-1"), session: "9" },
+      401: { comm: "sway", fds: serving("wayland-1") },
+      402: { env: { DISPLAY: ":0", DBUS_SESSION_BUS_ADDRESS: bus }, session: "9" }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9", type: "wayland" })).toMatchObject({
+      kind: "wlroots",
+      process: 400
+    })
+  })
+
+  it("doesn't put Wayland processes first in a session logind doesn't call Wayland", () => {
+    const system = at({
+      400: { env: atTheMonitor, started: 5 },
+      401: { env: { ...atTheMonitor, ...onDisplay("wayland-1") }, started: 1 },
+      402: { comm: "sway", fds: serving("wayland-1") }
+    })
+
+    expect(ownGraphicalSession(system, { display: ":0" })).toMatchObject({
+      kind: "x11",
+      process: 400
+    })
+  })
+
+  it("takes a Wayland session's Wayland processes over a newer app started for XWayland alone", () => {
+    const wayland = { ...onDisplay("wayland-1"), DBUS_SESSION_BUS_ADDRESS: bus }
+    const xwaylandOnly = { DISPLAY: ":0", DBUS_SESSION_BUS_ADDRESS: bus }
+    const system = at({
+      400: { env: wayland, session: "9", started: 1 },
+      401: { comm: "sway", fds: serving("wayland-1") },
+      402: { env: xwaylandOnly, session: "9", started: 5 }
+    })
+
+    expect(ownGraphicalSession(system, { session: "9", type: "wayland" })).toMatchObject({
+      kind: "wlroots",
+      process: 400
+    })
+    expect(
+      ownGraphicalSession(system, { session: "9", type: "wayland", lookFirstAt: 402 })?.process
+    ).toBe(400)
+  })
+
+  it("without logind, finds the compositor the same way", () => {
+    const seated = { XDG_SEAT: "seat0", ...onDisplay("wayland-1") }
+    const labwc = at({ 400: { env: seated }, 300: { comm: "labwc", fds: serving("wayland-1") } })
+    const swayElsewhere = at({ 400: { env: seated }, 500: { comm: "sway" } })
+
+    expect(ownGraphicalSession(labwc)?.kind).toBe("wlroots")
+    expect(ownGraphicalSession(swayElsewhere)?.kind).toBe("wayland")
+  })
+
+  it("finds the lock of a display given as a path", () => {
+    const system = at({
+      400: { env: { XDG_SEAT: "seat0", WAYLAND_DISPLAY: "/tmp/sway/wayland-1" } },
+      401: { comm: "sway", fds: ["/tmp/sway/wayland-1.lock"] }
+    })
+
+    expect(ownGraphicalSession(system)?.kind).toBe("wlroots")
   })
 
   it.each([

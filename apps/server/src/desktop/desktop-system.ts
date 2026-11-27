@@ -7,6 +7,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   writeFileSync
@@ -38,6 +39,7 @@ export interface DesktopSystem {
   readonly remove: (path: string) => void
   readonly exists: (path: string) => boolean
   readonly listFolder: (path: string) => ReadonlyArray<string>
+  readonly readLink: (path: string) => string | undefined
   readonly makePrivateFolder: (path: string) => void
   readonly closeToOtherAccounts: (path: string) => void
   readonly sleep: (ms: number) => Promise<void>
@@ -103,6 +105,13 @@ export const systemDesktopSystem = (): DesktopSystem => ({
       return readdirSync(path)
     } catch {
       return []
+    }
+  },
+  readLink: (path) => {
+    try {
+      return readlinkSync(path)
+    } catch {
+      return undefined
     }
   },
   makePrivateFolder: (path) => {

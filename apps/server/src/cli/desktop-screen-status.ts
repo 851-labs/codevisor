@@ -27,7 +27,8 @@ export const describeScreen = (status: DesktopStatus, screen: ScreenStatus): str
 
 const notSharedLines = (screen: ScreenStatus): ReadonlyArray<string> => {
   if (screen.session === undefined) return []
-  if (screen.session !== "x11") return [`This machine's screen isn't shared. ${waylandIsNotShared}`]
+  if (screen.session === "wayland")
+    return [`This machine's screen isn't shared. ${waylandIsNotShared}`]
 
   return ["This machine's screen isn't shared. Share it with: codevisor desktop setup --screen"]
 }
@@ -35,7 +36,12 @@ const notSharedLines = (screen: ScreenStatus): ReadonlyArray<string> => {
 const where = (screen: ScreenStatus): string =>
   screen.display === undefined ? "" : ` (${sessionName(screen)}display ${screen.display})`
 
-const sessionName = (screen: ScreenStatus): string => (screen.session === "x11" ? "X11, " : "")
+const sessionNames: ReadonlyMap<string, string> = new Map([
+  ["x11", "X11, "],
+  ["wlroots", "Wayland, "]
+])
+
+const sessionName = (screen: ScreenStatus): string => sessionNames.get(screen.session ?? "") ?? ""
 
 const whoIs = (screen: ScreenStatus): string => {
   if (screen.others.length === 0) return ""

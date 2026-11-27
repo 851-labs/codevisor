@@ -4,17 +4,21 @@ import { keepOwnFoldersPrivate } from "./desktop-layout.js"
 import type { LocateSocket } from "./desktop-liveness.js"
 import type { DesktopSystem } from "./desktop-system.js"
 import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
+import {
+  controlSocketOf,
+  helperCommand,
+  helperName,
+  type Scraper,
+  type ShownScreen
+} from "./screen-commands.js"
 
 export interface RunningHelper {
   readonly pid: number
-  readonly display: string | undefined
+  readonly shows: string | undefined
   readonly socket: string
 }
 
-export interface ShownScreen {
-  readonly display: string
-  readonly env: Readonly<Record<string, string>>
-}
+export type { ShownScreen } from "./screen-commands.js"
 
 export type TcpPortsOf = (helper: number, socket: string) => ReadonlyArray<number> | undefined
 
@@ -31,7 +35,7 @@ export interface ScreenHelpers {
   readonly start: (
     socket: string,
     shown: ShownScreen,
-    scraper: string
+    scraper: Scraper
   ) => Promise<string | undefined>
   readonly stop: (helper: RunningHelper) => Promise<boolean>
   readonly forget: (socket: string) => boolean
@@ -42,13 +46,12 @@ const pollMs = 100
 const socketPolls = 50
 const stopPolls = 50
 const portSettleMs = 1000
-const unchecked = "couldn't check that x0vncserver stays off the network"
 const socketPrefix = "codevisor-screen-"
 
 export const screenSocketPrefix = socketPrefix
 
 export const stillRunning = (pid: number): string =>
-  `x0vncserver (process ${pid}) doesn't stop, even when killed`
+  `the screen's VNC server (process ${pid}) doesn't stop, even when killed`
 
 export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
   const { system, pidFile, logFile, locate } = options
@@ -59,16 +62,24 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     if (!Number.isInteger(pid) || pid <= 0 || !system.processAlive(pid)) return undefined
 
     const words = (system.readText(`/proc/${pid}/cmdline`) ?? "").split("\0")
-    const socket = valueOf(words, "-rfbunixpath")
-    if (socket === undefined || !basename(socket).startsWith(socketPrefix)) return undefined
+    const socket = valueOf(words, "-rfbunixpath") ?? valueOf(words, "--unix-socket")
+    if (socket === undefined || !isOurSocket(socket)) return undefined
 
-    return { pid, display: valueOf(words, "-display"), socket }
+    return { pid, shows: valueOf(words, "-display") ?? waylandOf(pid), socket }
+  }
+
+  const waylandOf = (pid: number): string | undefined => {
+    const environ = (system.readText(`/proc/${pid}/environ`) ?? "").split("\0")
+    return environ
+      .find((pair) => pair.startsWith("WAYLAND_DISPLAY="))
+      ?.slice("WAYLAND_DISPLAY=".length)
   }
 
   const forget = (socket: string): boolean => {
     const wasThere = system.exists(socket) || system.exists(pidFile)
     system.remove(pidFile)
     system.remove(socket)
+    system.remove(controlSocketOf(socket))
     return wasThere
   }
 
@@ -106,60 +117,47 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     }
   }
 
-  const whyItMayNotBeShared = async (pid: number, socket: string): Promise<string | undefined> => {
-    if (!(await socketOpens(socket))) return `x0vncserver didn't open its socket (see ${logFile})`
+  const whyItMayNotBeShared = async (
+    pid: number,
+    socket: string,
+    name: string
+  ): Promise<string | undefined> => {
+    if (!(await socketOpens(socket))) return `${name} didn't open its socket (see ${logFile})`
 
     const first = portsNow(pid, socket)
     await system.sleep(portSettleMs)
     const second = portsNow(pid, socket)
-    if (first === undefined || second === undefined) return unchecked
+    if (first === undefined || second === undefined)
+      return `couldn't check that ${name} stays off the network`
 
     const port = [...first, ...second][0]
     return port === undefined
       ? undefined
-      : `x0vncserver listens on TCP port ${port}, and the screen must only be shared on its socket`
+      : `${name} listens on TCP port ${port}, and the screen must only be shared on its socket`
   }
 
   const start = async (
     socket: string,
     shown: ShownScreen,
-    scraper: string
+    scraper: Scraper
   ): Promise<string | undefined> => {
     keepOwnFoldersPrivate(system, { socket })
     forget(socket)
-    const command = [scraper, ...scraperArguments(shown.display, socket)]
-    const pid = system.spawnDetached("env", [...asAssignments(shown.env), ...command], logFile)
-    if (pid === undefined) return "x0vncserver couldn't be started"
+    const name = helperName(scraper.program)
+    const { program, args } = helperCommand(scraper, shown, socket)
+    const pid = system.spawnDetached(program, args, logFile)
+    if (pid === undefined) return `${name} couldn't be started`
 
     system.writeText(pidFile, `${pid}\n`)
-    const why = await whyItMayNotBeShared(pid, socket)
+    const why = await whyItMayNotBeShared(pid, socket, name)
     if (why === undefined) return undefined
-    if (!(await stop({ pid, display: shown.display, socket })))
-      return `${why}; ${stillRunning(pid)}`
+    if (!(await stop({ pid, shows: shown.shows, socket }))) return `${why}; ${stillRunning(pid)}`
 
     return why
   }
 
   return { running, start, stop, forget, started }
 }
-
-export const asAssignments = (env: Readonly<Record<string, string>>): ReadonlyArray<string> =>
-  Object.entries(env).map(([name, value]) => `${name}=${value}`)
-
-const scraperArguments = (display: string, socket: string): ReadonlyArray<string> => [
-  "-display",
-  display,
-  "-rfbunixpath",
-  socket,
-  "-rfbunixmode",
-  "0600",
-  "-rfbport",
-  "-1",
-  "-localhost",
-  "-SecurityTypes",
-  "None",
-  "-AcceptSetDesktopSize=0"
-]
 
 const tcpPortsOfTheHelper: TcpPortsOf = (helper, socket) =>
   holdsUnixSocket(helper, socket) ? tcpPortsListenedOnBy(helper) : undefined
@@ -168,3 +166,6 @@ const valueOf = (words: ReadonlyArray<string>, flag: string): string | undefined
   const at = words.indexOf(flag)
   return at < 0 ? undefined : words[at + 1]
 }
+
+const isOurSocket = (word: string): boolean =>
+  basename(word).startsWith(socketPrefix) && word.endsWith(".sock")

@@ -137,20 +137,38 @@ describe("codevisor desktop setup --screen", () => {
     expect(machine.errors.at(-1)).toBe("then run `codevisor desktop setup --screen` again.")
   })
 
-  it.each(["wayland", "wlroots"])(
-    "refuses a %s session before installing anything",
-    async (session) => {
-      const machine = world({
-        [`GET ${url("?screen=1")}`]: answers(withScreen({ session, missing, sudo: "passwordless" }))
-      })
+  it("refuses a Wayland desktop it can't share before installing anything", async () => {
+    const machine = world({
+      [`GET ${url("?screen=1")}`]: answers(
+        withScreen({ session: "wayland", missing, sudo: "passwordless" })
+      )
+    })
 
-      expect(await screenSetupCommand(machine.deps)).toBe(1)
-      expect(machine.errors).toEqual([
-        "This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
-      ])
-      expect(machine.httpCalls(`POST ${url("/screen/packages")}`)).toBe(0)
-    }
-  )
+    expect(await screenSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors).toEqual([
+      "This account's session at the screen runs a Wayland desktop that Codevisor can't share yet; it shares X11 sessions and wlroots ones such as Sway and Hyprland."
+    ])
+    expect(machine.httpCalls(`POST ${url("/screen/packages")}`)).toBe(0)
+  })
+
+  it("installs wayvnc for a wlroots session, and shares it", async () => {
+    const onSway = { session: "wlroots", display: "wayland-1" }
+    const machine = world({
+      [`GET ${url("?screen=1")}`]: answers(
+        withScreen({ ...onSway, missing: ["wayvnc", "notify-send"], sudo: "password" })
+      ),
+      [`GET ${url()}`]: answers(withScreen(onSway)),
+      [`POST ${url("/screen")}`]: answers(withScreen({ state: "running", ...onSway }))
+    })
+
+    expect(await screenSetupCommand(machine.deps)).toBe(0)
+    expect(machine.logs).toContain(
+      "    Ubuntu 24.04.5 LTS, codevisor is logged in at this machine's screen (Wayland, display wayland-1)"
+    )
+    expect(machine.logs).toContain(
+      `    sudo ${apt} install -y -q --no-install-recommends wayvnc libnotify-bin`
+    )
+  })
 
   it("says the screen is set up and will be tried again when it isn't shared yet, and how to undo it", async () => {
     const problem = "x0vncserver didn't open its socket (see /home/codevisor/screen.log)"
@@ -226,11 +244,15 @@ describe("codevisor desktop status, about the screen", () => {
     ],
     [
       { state: "none" as const, session: "wayland" },
-      "This machine's screen isn't shared. This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
+      "This machine's screen isn't shared. This account's session at the screen runs a Wayland desktop that Codevisor can't share yet; it shares X11 sessions and wlroots ones such as Sway and Hyprland."
     ],
     [
       { state: "none" as const, ...loggedIn },
       "This machine's screen isn't shared. Share it with: codevisor desktop setup --screen"
+    ],
+    [
+      { state: "running" as const, session: "constructor", display: ":0" },
+      "The screen (display :0) is shared as codevisor."
     ]
   ])("adds a line for the screen: %j", async (found, line) => {
     expect((await statusLines({ ...running, screen: screen(found) })).at(-1)).toBe(line)

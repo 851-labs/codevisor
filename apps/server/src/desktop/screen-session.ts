@@ -1,4 +1,5 @@
 import type { DesktopSystem } from "./desktop-system.js"
+import { WLROOTS_COMPOSITORS } from "./screen-commands.js"
 import { isInSession, processIds } from "./screen-logind.js"
 
 export { type AtTheScreen, accountsAtTheScreen } from "./screen-logind.js"
@@ -12,13 +13,14 @@ export interface GraphicalSession {
   readonly env: Readonly<Record<string, string>>
 }
 
-export type SessionSystem = Pick<DesktopSystem, "uid" | "readText" | "listFolder">
+export type SessionSystem = Pick<DesktopSystem, "uid" | "readText" | "listFolder" | "readLink">
 
 export interface SessionSearch {
   readonly ignoreDisplay?: string | undefined
   readonly lookFirstAt?: number | undefined
   readonly session?: string | undefined
   readonly display?: string | undefined
+  readonly type?: string | undefined
 }
 
 export const ownGraphicalSession = (
@@ -27,11 +29,94 @@ export const ownGraphicalSession = (
 ): GraphicalSession | undefined => {
   const known =
     search.lookFirstAt === undefined ? undefined : candidate(system, search.lookFirstAt, search)
-  if (known !== undefined) return known
+  const found =
+    known !== undefined && fitsTheType(known, search.type)
+      ? [known]
+      : processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
+  const compositors = new Map<string, number | undefined>()
+  const compositorOf = (session: GraphicalSession): number | undefined => {
+    const lock = lockOf(session.env)
+    if (lock === undefined) return undefined
+    if (!compositors.has(lock)) compositors.set(lock, wlrootsCompositorHolding(system, lock))
+    return compositors.get(lock)
+  }
+  const outer = outermost(system, ofTheSessionsType(found, search.type), compositorOf)
+  const chosen = newestOf(system, withTheBus(outer))
+  if (chosen?.kind !== "wayland") return chosen
 
-  const found = processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
-  return newestOf(system, withTheBus(found))
+  return compositorOf(chosen) === undefined ? chosen : { ...chosen, kind: "wlroots" }
 }
+
+const isWayland = (session: GraphicalSession): boolean =>
+  session.env["WAYLAND_DISPLAY"] !== undefined
+
+const fitsTheType = (session: GraphicalSession, type: string | undefined): boolean =>
+  type !== "wayland" || isWayland(session)
+
+const ofTheSessionsType = (
+  found: ReadonlyArray<GraphicalSession>,
+  type: string | undefined
+): ReadonlyArray<GraphicalSession> => {
+  if (type !== "wayland") return found
+
+  const wayland = found.filter(isWayland)
+  return wayland.length > 0 ? wayland : found
+}
+
+const outermost = (
+  system: SessionSystem,
+  found: ReadonlyArray<GraphicalSession>,
+  compositorOf: (session: GraphicalSession) => number | undefined
+): ReadonlyArray<GraphicalSession> => {
+  const isNested = (session: GraphicalSession): boolean => {
+    const compositor = compositorOf(session)
+    if (compositor === undefined) return false
+
+    const env = environmentOf(system.readText(`/proc/${compositor}/environ`))
+    return env["WAYLAND_DISPLAY"] !== undefined
+  }
+  const outer = found.filter((session) => !isNested(session))
+  return outer.length > 0 ? outer : found
+}
+
+const lockOf = (env: Readonly<Record<string, string>>): string | undefined => {
+  const wayland = env["WAYLAND_DISPLAY"]
+  if (wayland === undefined) return undefined
+  if (wayland.startsWith("/")) return `${wayland}.lock`
+
+  const runtime = env["XDG_RUNTIME_DIR"]
+  return runtime === undefined ? undefined : `${runtime}/${wayland}.lock`
+}
+
+interface Remembered {
+  readonly pid: number
+  readonly start: number
+}
+
+const remembered = new WeakMap<SessionSystem, Map<string, Remembered>>()
+
+const wlrootsCompositorHolding = (system: SessionSystem, lock: string): number | undefined => {
+  const known = remembered.get(system)?.get(lock)
+  if (known !== undefined && startOf(system, known.pid) === known.start) return known.pid
+
+  const found = processIds(system).find(
+    (pid) =>
+      WLROOTS_COMPOSITORS.has(system.readText(`/proc/${pid}/comm`)?.trim() ?? "") &&
+      ownerOf(system, pid) === system.uid &&
+      holds(system, pid, lock)
+  )
+  if (found === undefined) return undefined
+
+  const forSystem = remembered.get(system) ?? new Map<string, Remembered>()
+  forSystem.set(lock, { pid: found, start: startOf(system, found) })
+  remembered.set(system, forSystem)
+  return found
+}
+
+const holds = (system: SessionSystem, pid: number, path: string): boolean =>
+  system
+    .listFolder(`/proc/${pid}/fd`)
+    .some((fd) => system.readLink(`/proc/${pid}/fd/${fd}`) === path)
 
 const carried = [
   "DISPLAY",

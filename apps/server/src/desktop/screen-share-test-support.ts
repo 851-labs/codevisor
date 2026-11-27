@@ -13,6 +13,7 @@ export const socket = "/run/user/1001/codevisor-screen-e494c633d5a9.sock"
 export const pidFile = `${DATA_DIR}/screen.pid`
 export const helper = 4242
 const sessionProcess = 400
+const compositor = 402
 const withTheScreenPrograms = [...EVERY_PROGRAM, "X0tigervnc", "notify-send"]
 export const desktopEntry = {
   id: "desktop",
@@ -26,6 +27,13 @@ const environ = (env: Record<string, string>): string =>
   Object.entries(env)
     .map(([name, value]) => `${name}=${value}\0`)
     .join("")
+
+export const onSway = {
+  XDG_SEAT: "seat0",
+  WAYLAND_DISPLAY: "wayland-1",
+  XDG_RUNTIME_DIR: "/run/user/1001",
+  DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1001/bus"
+}
 
 export const aliceAtTheMonitor = {
   XDG_SEAT: "seat0",
@@ -60,7 +68,10 @@ export const workstation = (scene: Scene = {}) => {
   const logind: NonNullable<FakeMachineOptions["results"]> = { ...nobodyIsSeated, ...scene.results }
   const machine = fakeMachine({
     programs: withTheScreenPrograms,
-    folders: { "/proc": [String(sessionProcess), String(sessionProcess + 1)] },
+    folders: {
+      "/proc": [String(sessionProcess), String(sessionProcess + 1), String(compositor)],
+      [`/proc/${compositor}/fd`]: ["3"]
+    },
     ...scene,
     results: logind,
     files: { ...UBUNTU, ...scene.files }
@@ -76,8 +87,15 @@ export const workstation = (scene: Scene = {}) => {
     },
     spawnDetached: (command: string, args: ReadonlyArray<string>, logPath: string) => {
       socketState.gone = false
-      return machine.system.spawnDetached(command, args, logPath)
+      const pid = machine.system.spawnDetached(command, args, logPath)
+      const assigned = args.filter((arg) => /^[A-Z_]+=/.test(arg))
+      machine.files.set(`/proc/${pid}/environ`, assigned.map((pair) => `${pair}\0`).join(""))
+      return pid
     }
+  }
+  const serve = (env: Record<string, string>): void => {
+    const lock = `${env["XDG_RUNTIME_DIR"] ?? ""}/${env["WAYLAND_DISPLAY"] ?? ""}.lock`
+    machine.files.set(`/proc/${compositor}/fd/3`, lock)
   }
   const logIn = (
     env: Record<string, string> = aliceAtTheMonitor,
@@ -85,12 +103,21 @@ export const workstation = (scene: Scene = {}) => {
     login: Login = firstLogin
   ): void => {
     machine.files.set(`/proc/${login.process}/status`, "Uid:\t1001\t1001\n")
+    if (login === firstLogin && env["WAYLAND_DISPLAY"] !== undefined) serve(env)
     machine.files.set(`/proc/${login.process}/environ`, environ(env))
     machine.files.set(
       `/proc/${login.process}/cgroup`,
       `0::/user.slice/user-1001.slice/session-${login.session}.scope\n`
     )
     Object.assign(logind, seated("codevisor", type, env["DISPLAY"], login.session))
+  }
+  const runCompositor = (name: string, session = firstLogin.session): void => {
+    machine.files.set(`/proc/${compositor}/status`, "Uid:\t1001\t1001\n")
+    machine.files.set(`/proc/${compositor}/comm`, `${name}\n`)
+    machine.files.set(
+      `/proc/${compositor}/cgroup`,
+      `0::/user.slice/user-1001.slice/session-${session}.scope\n`
+    )
   }
   const leaveTheScreen = (): void => void Object.assign(logind, nobodyIsSeated)
   const endTheSession = (): void => {
@@ -125,6 +152,7 @@ export const workstation = (scene: Scene = {}) => {
     logIn,
     logOut,
     leaveTheScreen,
+    runCompositor,
     endTheSession,
     settled,
     clock,

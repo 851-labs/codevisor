@@ -6,6 +6,7 @@ export interface Process {
   readonly session?: string
   readonly started?: number
   readonly comm?: string
+  readonly fds?: ReadonlyArray<string>
   readonly cmdline?: ReadonlyArray<string>
 }
 
@@ -19,12 +20,19 @@ export const machine = ({ processes, liveDisplays = ["X0"], answers = {} }: Mach
   uid: ownUid,
   listFolder: (path: string): ReadonlyArray<string> => {
     if (path === "/proc") return [...Object.keys(processes), "self", "cpuinfo"]
+    const fds = /^\/proc\/(\d+)\/fd$/.exec(path)?.[1]
+    if (fds !== undefined)
+      return (processes[Number(fds)]?.fds ?? []).map((_, index) => String(index))
     return path === "/tmp/.X11-unix" ? liveDisplays : []
   },
   readText: (path: string): string | undefined => {
     const [, pid, file] = /^\/proc\/(\d+)\/(\w+)$/.exec(path) ?? []
     const process = processes[Number(pid)]
     return process === undefined ? undefined : procFile(Number(pid), process, file ?? "")
+  },
+  readLink: (path: string): string | undefined => {
+    const [, pid, fd] = /^\/proc\/(\d+)\/fd\/(\d+)$/.exec(path) ?? []
+    return processes[Number(pid)]?.fds?.[Number(fd)]
   },
   run: async (command: string, args: ReadonlyArray<string>) => {
     const answer = answers[[command, ...args].join(" ")]

@@ -11,9 +11,12 @@ export const DESKTOP_PROGRAMS = [
   "python3"
 ] as const
 
-export const SCREEN_SCRAPERS = ["X0tigervnc", "x0vncserver"] as const
 export const SCREEN_NOTIFIER = "notify-send"
-export const SCREEN_PROGRAMS = ["x0vncserver", SCREEN_NOTIFIER] as const
+export const X11_SCREEN_PROGRAMS = ["x0vncserver", SCREEN_NOTIFIER] as const
+export const WLROOTS_SCREEN_PROGRAMS = ["wayvnc", SCREEN_NOTIFIER] as const
+export const SCREEN_PROGRAMS = ["x0vncserver", "wayvnc", SCREEN_NOTIFIER] as const
+
+export type ScreenProgram = (typeof SCREEN_PROGRAMS)[number]
 
 export interface OsRelease {
   readonly name: string
@@ -27,8 +30,10 @@ export interface PackageFamily {
   readonly megabytes: number
   readonly serves: (release: OsRelease) => boolean
   readonly commands: ReadonlyArray<RootCommand>
-  readonly screenCommands: ReadonlyArray<RootCommand>
+  readonly screenCommands: ScreenCommands
 }
+
+export type ScreenCommands = (programs: ReadonlyArray<ScreenProgram>) => ReadonlyArray<RootCommand>
 
 const lockWaitSeconds = 600
 const retrySeconds = 10
@@ -93,10 +98,44 @@ const zypperPackages = [
   "adwaita-icon-theme"
 ]
 
-const aptScreenPackages = ["tigervnc-scraping-server", "libnotify-bin"]
-const dnfScreenPackages = ["tigervnc-x11-server", "libnotify"]
-const pacmanScreenPackages = ["tigervnc", "libnotify"]
-const zypperScreenPackages = ["xorg-x11-Xvnc", "libnotify-tools"]
+type ScreenPackages = Readonly<Record<ScreenProgram, string>>
+
+const aptScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc-scraping-server",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify-bin"
+}
+const dnfScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc-x11-server",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify"
+}
+const pacmanScreenPackages: ScreenPackages = {
+  x0vncserver: "tigervnc",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify"
+}
+const zypperScreenPackages: ScreenPackages = {
+  x0vncserver: "xorg-x11-Xvnc",
+  wayvnc: "wayvnc",
+  "notify-send": "libnotify-tools"
+}
+
+const installing =
+  (
+    packages: ScreenPackages,
+    install: (
+      names: ReadonlyArray<string>,
+      programs: ReadonlyArray<ScreenProgram>
+    ) => ReadonlyArray<RootCommand>
+  ): ScreenCommands =>
+  (programs) =>
+    programs.length === 0
+      ? []
+      : install(
+          programs.map((program) => packages[program]),
+          programs
+        )
 
 const aptFamily = new Set(["debian", "ubuntu"])
 const withoutXfceOfTheirOwn = new Set(["rhel", "centos", "ol", "amzn"])
@@ -146,7 +185,7 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 640,
     serves: (release) => release.ids.some((id) => aptFamily.has(id)),
     commands: aptInstall(aptPackages),
-    screenCommands: aptInstall(aptScreenPackages)
+    screenCommands: installing(aptScreenPackages, (names) => aptInstall(names))
   },
   {
     manager: "dnf",
@@ -155,7 +194,9 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     serves: (release) =>
       release.ids.includes("fedora") && !release.ids.some((id) => withoutXfceOfTheirOwn.has(id)),
     commands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfPackages]],
-    screenCommands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfScreenPackages]]
+    screenCommands: installing(dnfScreenPackages, (names) => [
+      ["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...names]
+    ])
   },
   {
     manager: "pacman",
@@ -165,9 +206,9 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     commands: [
       ["sh", "-c", pacmanUntilItsLockIsFree(setTheDesktopUpAgain), "sh", ...pacmanPackages]
     ],
-    screenCommands: [
-      ["sh", "-c", pacmanUntilItsLockIsFree(shareTheScreenAgain), "sh", ...pacmanScreenPackages]
-    ]
+    screenCommands: installing(pacmanScreenPackages, (names) => [
+      ["sh", "-c", pacmanUntilItsLockIsFree(shareTheScreenAgain), "sh", ...names]
+    ])
   },
   {
     manager: "zypper",
@@ -175,6 +216,8 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 740,
     serves: (release) => release.ids.includes("opensuse"),
     commands: [["sh", "-c", zypperWithTheStockPanel, "sh", ...zypperPackages]],
-    screenCommands: [["sh", "-c", zypperGiving(SCREEN_PROGRAMS), "sh", ...zypperScreenPackages]]
+    screenCommands: installing(zypperScreenPackages, (names, programs) => [
+      ["sh", "-c", zypperGiving(programs), "sh", ...names]
+    ])
   }
 ]

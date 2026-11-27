@@ -21,20 +21,19 @@ import {
   installPlan,
   osRelease,
   runAsRoot,
-  type ScreenPrograms,
-  screenPrograms,
+  type ScreenProgram,
   sudoKind
 } from "./desktop-packages.js"
 import type { DesktopSystem } from "./desktop-system.js"
 import type { RootCommand } from "./old-desktop.js"
+import { asAssignments, type ScreenKind, type ShownScreen } from "./screen-commands.js"
 import {
-  asAssignments,
   type RunningHelper,
   screenHelpers,
-  type ShownScreen,
   stillRunning,
   type TcpPortsOf
 } from "./screen-helper.js"
+import { knownScreenPrograms, noScraperFor, tooOldText } from "./screen-programs.js"
 import {
   accountsAtTheScreen,
   type AtTheScreen,
@@ -66,7 +65,6 @@ export interface ScreenShareOptions {
   readonly now?: () => number
 }
 
-type X11Session = GraphicalSession & ShownScreen
 type Present = ReadonlyArray<AtTheScreen> | undefined
 
 interface Known<Value> {
@@ -78,13 +76,12 @@ const notifyEveryMs = 30_000
 const retryAfterMs = 30_000
 const programsStayKnownMs = 30_000
 const diesTooSoonMs = 30_000
-const diedSoon = "x0vncserver stopped right after it started; see its log"
+const diedSoon = "the screen's VNC server stopped right after it started; see its log"
 const installing = "Installing packages"
 const notRunning = "the helper that shares the screen isn't running"
-const noScraper = "x0vncserver (TigerVNC's server for an existing screen) isn't installed"
 
 export const waylandIsNotShared =
-  "This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
+  "This account's session at the screen runs a Wayland desktop that Codevisor can't share yet; it shares X11 sessions and wlroots ones such as Sway and Hyprland."
 
 export const someoneElseIsThere = (accounts: ReadonlyArray<string>, account: string): string =>
   `${accounts.join(" and ")} ${accounts.length === 1 ? "is" : "are"} logged in at this machine's screen, and Codevisor runs as ${account} here, so it can't share that screen. Set up a separate desktop instead: codevisor desktop setup`
@@ -109,7 +106,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   let retryAt: number | undefined
   let retryFor: number | undefined
   let notifiedAt: number | undefined
-  let installed: Known<ScreenPrograms> | undefined
+  const installed = knownScreenPrograms(system, now)
   let knownSudo: Known<DesktopSudo> | undefined
   let startedAt: number | undefined
   let busy: string | undefined
@@ -137,7 +134,8 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       ignoreDisplay: virtualDisplay(),
       lookFirstAt: seenAt,
       session: own?.session,
-      display: own?.display
+      display: own?.display,
+      type: own?.type
     })
     seenAt = found?.process
     return found
@@ -163,13 +161,18 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   const isFresh = <Value>(known: Known<Value> | undefined): known is Known<Value> =>
     known !== undefined && now() - known.at < programsStayKnownMs
 
-  const programs = async (): Promise<ScreenPrograms> => {
-    if (isFresh(installed)) return installed.value
+  const kindsWanted = async (
+    found: GraphicalSession | undefined
+  ): Promise<ReadonlyArray<ScreenKind>> => {
+    if (found === undefined) return installed.kindsOfTheMachine()
 
-    const found = await screenPrograms(system)
-    installed = found.missing.length === 0 ? { value: found, at: now() } : undefined
-    return found
+    const shown = shownFrom(found)
+    return shown === undefined ? [] : [shown.kind]
   }
+
+  const missingGiven = async (
+    found: GraphicalSession | undefined
+  ): Promise<ReadonlyArray<ScreenProgram>> => installed.missing(await kindsWanted(found))
 
   const sudo = async (): Promise<DesktopSudo> => {
     if (isFresh(knownSudo)) return knownSudo.value
@@ -178,20 +181,18 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return knownSudo.value
   }
 
-  const checkProgramsAgain = (): void => {
-    installed = undefined
-  }
-
   const whyItDidNotStart = async (
     socket: string,
     found: GraphicalSession
   ): Promise<string | undefined> => {
-    if (!isOnX11(found)) return waylandIsNotShared
+    const shown = shownFrom(found)
+    if (shown === undefined) return waylandIsNotShared
 
-    const { scraper } = await programs()
-    if (scraper === undefined) return noScraper
+    const scraper = (await installed.programs([shown.kind])).scrapers.get(shown.kind)
+    if (scraper === undefined) return noScraperFor(shown.kind)
+    if (scraper.tooOld !== undefined) return tooOldText(scraper)
 
-    return helpers.start(socket, found, scraper)
+    return helpers.start(socket, shown, scraper)
   }
 
   const start = async (socket: string, found: GraphicalSession): Promise<void> => {
@@ -236,8 +237,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     socket: string
   ): boolean =>
     running.socket === socket &&
-    found?.kind === "x11" &&
-    sameDisplay(running.display, found.display) &&
+    showsTheSame(running, found) &&
     locate(socket).problem === undefined
 
   const stopWhatThisServerStarted = async (): Promise<void> => {
@@ -277,7 +277,9 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     found: GraphicalSession | undefined,
     asked: ScreenStatusOptions
   ) => {
-    const { missing } = await programs()
+    const missing = await missingGiven(found)
+    const shown = found === undefined ? undefined : shownFrom(found)
+    const display = shown?.shows ?? found?.display
     if (missing.length === 0) failure = undefined
     return {
       missing,
@@ -286,7 +288,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       ...(busy === undefined ? {} : { busy }),
       ...(failure === undefined ? {} : { failure }),
       ...(found === undefined ? {} : { session: found.kind }),
-      ...(found?.display === undefined ? {} : { display: found.display })
+      ...(display === undefined ? {} : { display })
     }
   }
 
@@ -310,7 +312,8 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     const there = othersGiven(present)
     if (found === undefined && there.length > 0)
       throw new HttpFailure(409, someoneElseIsThere(there, system.account))
-    if (found !== undefined && !isOnX11(found)) throw new HttpFailure(409, waylandIsNotShared)
+    if (found !== undefined && shownFrom(found) === undefined)
+      throw new HttpFailure(409, waylandIsNotShared)
   }
 
   const refuseAConfigItCannotRead = (): void => {
@@ -320,14 +323,18 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
 
   const setUp = async (): Promise<ScreenStatus> => {
     refuseAConfigItCannotRead()
-    refuseWhatCannotBeShared(await accountsAtTheScreen(system))
-    checkProgramsAgain()
-    const { missing } = await programs()
+    const present = await accountsAtTheScreen(system)
+    refuseWhatCannotBeShared(present)
+    installed.checkAgain()
+    const found = sessionGiven(present)
+    const missing = await missingGiven(found)
     if (missing.length > 0)
       throw new HttpFailure(
         409,
         `The screen can't be shared until these are installed: ${missing.join(", ")}`
       )
+    const tooOld = await installed.tooOld(await kindsWanted(found))
+    if (tooOld !== undefined) throw new HttpFailure(409, tooOld)
 
     const socket = recordedSocket() ?? ownSocket()
     const entry = { id: SCREEN_ENTRY, vnc: { socket, name: "Screen" }, service: "server" }
@@ -368,7 +375,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
       })
       .finally(() => {
         busy = undefined
-        checkProgramsAgain()
+        installed.checkAgain()
       })
   }
 
@@ -379,7 +386,12 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     if ((await sudoKind(system)) !== "passwordless")
       throw new HttpFailure(403, `${installing} needs an administrator on this machine`)
 
-    return plan.screenCommands
+    const found = sessionGiven(await accountsAtTheScreen(system))
+    if (found !== undefined && shownFrom(found) === undefined)
+      throw new HttpFailure(409, waylandIsNotShared)
+
+    installed.checkAgain()
+    return plan.screenCommands(await missingGiven(found))
   }
 
   const installPackages = async (): Promise<ScreenStatus> => {
@@ -442,5 +454,20 @@ const asLogindSaysItIs = (found: GraphicalSession, type: string | undefined): Gr
   return found
 }
 
-const isOnX11 = (session: GraphicalSession): session is X11Session =>
-  session.kind === "x11" && session.display !== undefined
+export const shownFrom = (session: GraphicalSession): ShownScreen | undefined => {
+  const wayland = session.env["WAYLAND_DISPLAY"]
+  if (session.kind === "wlroots" && wayland !== undefined)
+    return { kind: "wlroots", shows: wayland, env: session.env }
+  if (session.kind !== "x11" || session.display === undefined) return undefined
+
+  return { kind: "x11", shows: session.display, env: session.env }
+}
+
+const showsTheSame = (running: RunningHelper, found: GraphicalSession | undefined): boolean => {
+  const shown = found === undefined ? undefined : shownFrom(found)
+  if (shown === undefined) return false
+
+  return shown.kind === "x11"
+    ? sameDisplay(running.shows, shown.shows)
+    : running.shows === shown.shows
+}

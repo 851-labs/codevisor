@@ -155,6 +155,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       options.existing?.includes(path) === true ||
       options.folders?.[path] !== undefined,
     listFolder: (path) => options.folders?.[path] ?? [],
+    readLink: (path) => files.get(path),
     makePrivateFolder: (path) => void madePrivate.push(path),
     closeToOtherAccounts: (path) => void closedToOthers.push(path),
     sleep: async () => {

@@ -144,6 +144,19 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(machine.files.has(CONFIG)).toBe(false)
   })
 
+  it("reports a Wayland session it can't share with its display, and nothing to install", async () => {
+    const machine = workstation({ programs: EVERY_PROGRAM })
+    machine.logIn({ XDG_SEAT: "seat0", WAYLAND_DISPLAY: "wayland-0", DISPLAY: ":0" })
+
+    expect(await machine.screen.status({ askSudo: true })).toEqual({
+      state: "none",
+      session: "wayland",
+      display: ":0",
+      missing: [],
+      others: []
+    })
+  })
+
   it("names what is missing instead of setting up without it", async () => {
     const machine = workstation({ programs: EVERY_PROGRAM })
     machine.logIn()
@@ -285,13 +298,14 @@ describe("sharing the screen the server's account is logged in at", () => {
     const machine = workstation()
     machine.logIn()
 
+    const probes = () => machine.asked.filter((line) => line.startsWith("sh -c command -v")).length
     await machine.screen.status()
+    const afterOne = probes()
     await machine.screen.status()
 
     const listed = machine.asked.filter((line) => line === "loginctl list-sessions --no-legend")
-    const probed = machine.asked.filter((line) => line.startsWith("sh -c command -v"))
     expect(listed).toHaveLength(2)
-    expect(probed).toHaveLength(2)
+    expect(probes()).toBe(afterOne)
   })
 
   it("goes by the session type logind reports, not by one process's variables", async () => {
@@ -328,7 +342,7 @@ describe("sharing the screen the server's account is logged in at", () => {
     expect(machine.spawned).toHaveLength(1)
     expect(await machine.screen.status()).toMatchObject({
       state: "stopped",
-      problem: "x0vncserver stopped right after it started; see its log"
+      problem: "the screen's VNC server stopped right after it started; see its log"
     })
 
     machine.clock.now += 30_000
@@ -381,7 +395,7 @@ describe("sharing the screen the server's account is logged in at", () => {
 
     expect(await refusal(machine.screen.remove())).toMatchObject({
       status: 500,
-      message: "x0vncserver (process 4242) doesn't stop, even when killed"
+      message: "the screen's VNC server (process 4242) doesn't stop, even when killed"
     })
     expect(JSON.parse(machine.files.get(CONFIG) ?? "").displays).toEqual([screenEntry])
   })

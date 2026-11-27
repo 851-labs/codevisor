@@ -161,7 +161,7 @@ const accountName = /^[a-z_][a-z0-9_.-]{0,31}\$?$/i
 const knownPrograms = new Set<string>(DESKTOP_PROGRAMS)
 const knownScreenPrograms = new Set<string>(SCREEN_PROGRAMS)
 const sessionWord = /^[a-z0-9]{1,16}$/
-const displayName = /^[A-Za-z0-9:._-]{1,64}$/
+const displayName = /^[A-Za-z0-9:._/-]{1,108}$/
 
 const continued = "    | "
 
