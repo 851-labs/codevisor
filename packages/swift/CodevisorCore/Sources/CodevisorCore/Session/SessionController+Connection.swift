@@ -222,6 +222,13 @@ extension SessionController {
     worktreeName = nil
   }
 
+  public func replaceUnreachableClient(with client: any CodevisorServerClienting) {
+    let isPlaceholder = (serverClient as? CodevisorServerClient)?.isUnreachablePlaceholder ?? false
+    guard serverClient == nil || isPlaceholder else { return }
+
+    serverClient = client
+  }
+
   public func adoptServerClient(_ client: any CodevisorServerClienting, forServer serverId: String) {
     guard project.serverId == serverId else { return }
     serverClient = client
@@ -310,7 +317,7 @@ extension SessionController {
     let model: SessionModel
     let reusesCachedDisplay: Bool
     var cachedTranscriptLoad: Task<Void, Never>?
-    if let cached = cachedTranscriptModel, cached === self.model {
+    if let cached = cachedDisplay(reusableWith: serverClient) {
       transport = cached.transport
       model = cached
       reusesCachedDisplay = true
@@ -345,7 +352,7 @@ extension SessionController {
     session = try opened.response.session.chatSession(serverId: scopedServerId)
     preloadedTranscript = opened.response.transcript
     persistedRuntime = opened.response.runtime
-    if let data = opened.data { rememberOpenedTranscript(data, machineId: scopedServerId, sessionId: session.id) }
+    if let data = opened.data { rememberOpenedTranscript(data) }
     self.serverSession = session
 
     connectedHarnessId = harnessId
@@ -358,9 +365,8 @@ extension SessionController {
       await model.loadHistoryReplacingCachedDisplay(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
       cachedTranscriptModel = nil
     } else {
-      await model.loadHistoryForInitialDisplay(
-        preloaded: preloadedTranscript.map(transport.historyPage(from:))
-      )
+      await model.loadHistoryForInitialDisplay(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
+      retireCachedDisplay()
     }
     pendingPlanApproval = model.pendingPlanApproval
     if loadsExistingHistory {

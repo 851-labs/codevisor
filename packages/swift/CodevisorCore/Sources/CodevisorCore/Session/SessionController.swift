@@ -265,7 +265,6 @@ final public class SessionController {
 
   public internal(set) var pendingPlanApproval = false
 
-  public var transcriptCache: TranscriptPageCache?
   public var clientCache: ClientCache?
   public var reportsTurnAnalytics = true
   var cachedTranscriptModel: SessionModel?

@@ -92,6 +92,39 @@ struct ClientCacheTests {
     #expect(cache.files.read(named: name) == bytes)
   }
 
+  @Test("An attachment opened before still shows when its machine can't be reached")
+  func cachedAttachmentsLoadOffline() async throws {
+    let fixture = try ClientCacheFixture()
+    defer { fixture.tearDown() }
+    let cache = try fixture.makeCache()
+    let bytes = Data(repeating: 9, count: 32)
+    let online = Self.client(AttachmentTransport(bytes: bytes), cache: cache)
+    let offline = Self.client(UnreachableTransport(), cache: cache)
+
+    _ = try await online.filePreview(id: "file-2")
+
+    #expect(try await offline.filePreview(id: "file-2") == bytes)
+    await #expect(throws: (any Error).self) { try await offline.fileData(id: "file-2") }
+  }
+
+  @Test("The sidebar cached by an older version moves into the cache tables once")
+  func legacySidebarIsImported() throws {
+    let fixture = try ClientCacheFixture()
+    defer { fixture.tearDown() }
+    let cache = try fixture.makeCache()
+    let store = InMemoryStore()
+    let project = Project.fromFolder(URL(fileURLWithPath: "/fixture/project"), serverId: "local")
+    let snapshot = ServerNavigationSnapshot.fixture(projects: [project], sessions: [Self.chat("Old", project: project)])
+    try store.saveData(JSONEncoder().encode(["local"]), forKey: LegacyNavigationCacheImport.indexKey)
+    try store.saveData(JSONEncoder().encode(snapshot), forKey: LegacyNavigationCacheImport.keyPrefix + "local")
+
+    LegacyNavigationCacheImport.run(store: store, cache: cache)
+
+    #expect(cache.loadNavigation()["local"] == snapshot)
+    #expect(store.loadData(forKey: LegacyNavigationCacheImport.indexKey) == nil)
+    #expect(store.loadData(forKey: LegacyNavigationCacheImport.keyPrefix + "local") == nil)
+  }
+
   @Test("Transcripts not opened within the retention window age out")
   func oldTranscriptsAgeOut() async throws {
     let fixture = try ClientCacheFixture()
@@ -140,6 +173,12 @@ struct ClientCacheTests {
       ServerNavigationDelta.Deletion.self, from: Data(#"{"table":"\#(table)","id":"\#(id)"}"#.utf8))
   }
 
+  private static func client(_ transport: any ServerRequestTransport, cache: ClientCache) -> CodevisorServerClient {
+    CodevisorServerClient(
+      config: CodevisorServerConfig(baseURL: URL(string: "http://machine.invalid")!, requestTransport: transport),
+      machineId: "local", fileCache: cache)
+  }
+
   private static func chat(_ title: String, project: Project) -> ChatSession {
     ChatSession(
       id: UUID(), projectId: project.id, serverId: "local", harnessId: "codex", title: title,
@@ -152,5 +191,11 @@ private struct AttachmentTransport: ServerRequestTransport {
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     (bytes, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+  }
+}
+
+private struct UnreachableTransport: ServerRequestTransport {
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    throw URLError(.cannotConnectToHost)
   }
 }

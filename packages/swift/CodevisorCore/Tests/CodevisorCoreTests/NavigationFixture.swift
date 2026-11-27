@@ -13,11 +13,12 @@ final class NavigationFixture {
 
   init(
     persistence: InMemoryStore = InMemoryStore(),
+    clientCache: ClientCache? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     now: @escaping () -> Date = Date.init
   ) {
     self.persistence = persistence
-    store = NavigationStore(store: persistence, clock: clock, now: now)
+    store = NavigationStore(store: persistence, clientCache: clientCache, clock: clock, now: now)
     projectList = ProjectListModel()
     projectList.navigationStore = store
     workspaces = ProjectedWorkspaceRepository(store: store)

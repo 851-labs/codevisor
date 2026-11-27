@@ -26,8 +26,7 @@ public final class NavigationStore {
     clock: any Clock<Duration> = ContinuousClock(),
     now: @escaping () -> Date = Date.init
   ) {
-    caches = NavigationCacheStore(
-      store: store, preloaded: launchSnapshot?.navigationCaches, clientCache: clientCache)
+    caches = NavigationCacheStore(preloaded: launchSnapshot?.navigationCaches, clientCache: clientCache)
     outbox = NavigationOutbox(store: store)
     layouts = DeviceLayoutStore(store: store)
     executor = NavigationOutboxExecutor(outbox: outbox, clock: clock, now: now)
@@ -78,6 +77,8 @@ public final class NavigationStore {
   }
 
   public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
+
+  public var hasCachedContent: Bool { cacheSummary.values.contains(false) }
 
   public func isCacheEmpty(for machineId: String) -> Bool { cacheSummary[machineId] ?? true }
 

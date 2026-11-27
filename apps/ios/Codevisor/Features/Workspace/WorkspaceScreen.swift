@@ -278,7 +278,6 @@ struct WorkspaceScreen: View {
         "workspace.prepareTask",
         "availability=\(screenAvailability) draft=\(isDraft)"
       )
-      guard isDraft || canShowServerContent else { return }
       await prepare()
     }
     .onChange(of: activePane?.id) { old, new in
@@ -344,7 +343,7 @@ struct WorkspaceScreen: View {
     environment.machines.sandboxPower(forMachineId: resolvedServerId) != nil
   }
 
-  private var canShowServerContent: Bool {
+  var canShowServerContent: Bool {
     screenAvailability == .ready || isSandboxAsleep
   }
 

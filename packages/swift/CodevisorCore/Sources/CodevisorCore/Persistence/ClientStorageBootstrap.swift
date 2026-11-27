@@ -66,7 +66,7 @@ public enum ClientStorageBootstrap {
       let storage = ClientStorage(
         database: opened.database,
         store: opened.store,
-        launchSnapshot: ClientLaunchSnapshot.read(from: opened.store),
+        launchSnapshot: ClientLaunchSnapshot.read(from: opened.store, cache: opened.cache),
         cache: opened.cache
       )
       return (storage, try? opened.database.allPreferences())
@@ -139,15 +139,22 @@ public enum ClientStorageBootstrap {
     }
 
     LegacyClientArtifacts.pruneExpiredRecovery(in: directory, fileManager: fileManager)
-    LegacyClientArtifacts.removeRetiredCaches(in: directory, fileManager: fileManager)
-    return ClientStorage(
-      database: database, store: store, cache: openCache(databaseURL: databaseURL, fileManager: fileManager))
+    let cache = openCache(in: directory, store: store, fileManager: fileManager)
+    return ClientStorage(database: database, store: store, cache: cache)
   }
 
-  private static func openCache(databaseURL: URL, fileManager: FileManager) -> ClientCache? {
-    let files = CodevisorAppVariant.cacheURL(fileManager: fileManager)
-      .appendingPathComponent(ClientCache.filesDirectoryName, isDirectory: true)
-    return ClientCache.open(databaseURL: databaseURL, filesDirectory: files)
+  private static func openCache(
+    in directory: URL, store: ClientPersistenceStore, fileManager: FileManager
+  ) -> ClientCache? {
+    let caches = CodevisorAppVariant.cacheURL(fileManager: fileManager)
+    LegacyClientArtifacts.removeRetiredCaches(in: directory, fileManager: fileManager)
+    LegacyClientArtifacts.removeRetiredCaches(in: caches, fileManager: fileManager)
+    let databaseURL = directory.appendingPathComponent(ClientDatabase.fileName)
+    let files = caches.appendingPathComponent(ClientCache.filesDirectoryName, isDirectory: true)
+    guard let cache = ClientCache.open(databaseURL: databaseURL, filesDirectory: files) else { return nil }
+
+    LegacyNavigationCacheImport.run(store: store, cache: cache)
+    return cache
   }
 
   private static func importLegacyState(

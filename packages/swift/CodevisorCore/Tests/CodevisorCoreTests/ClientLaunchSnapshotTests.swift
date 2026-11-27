@@ -10,25 +10,30 @@ struct ClientLaunchSnapshotTests {
   @Test("A launch environment shows the previous launch's state without reading it on the main thread")
   func environmentAdoptsOffMainSnapshot() async throws {
     let store = MainThreadReadRecordingStore()
+    let cacheFixture = try ClientCacheFixture()
+    defer { cacheFixture.tearDown() }
+    let cache = try cacheFixture.makeCache()
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/launch-snapshot"))
     let session = ChatSession(projectId: project.id, serverId: "local", title: "Cached chat")
     let workspace = Workspace(
       name: "Launch workspace", rootDirectory: "/tmp/launch-snapshot", serverId: "local",
       projectId: project.id, centerTree: .leaf(.centerInitial(sessionId: session.id)), isServerSynced: true)
 
-    await NavigationFixture(persistence: store.base)
+    await NavigationFixture(persistence: store.base, clientCache: cache)
       .install(projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
     ConfigOptionCache(store: store.base).store([codexCapability()], forServer: "local")
     ComposerDraftStore(store: store.base)
       .saveDraft(.init(projectId: project.id, projectServerId: "local", composerText: "unsent"), forServer: "local")
     AppSettingsModel(store: store.base).completeOnboarding(importExternalSessions: false)
     PersistenceEncoding.drain()
+    await cache.flush()
 
     store.startRecording()
-    let launchSnapshot = await Task.detached { ClientLaunchSnapshot.read(from: store) }.value
+    let launchSnapshot = await Task.detached { ClientLaunchSnapshot.read(from: store, cache: cache) }.value
     let environment = AppEnvironment(
       navigationPersistence: store,
       launchSnapshot: launchSnapshot,
+      clientCache: cache,
       configCache: ConfigOptionCache(store: store, launchSnapshot: launchSnapshot),
       composerDrafts: ComposerDraftStore(
         store: store, attachmentFiles: .temporary(), launchSnapshot: launchSnapshot),
@@ -42,7 +47,7 @@ struct ClientLaunchSnapshotTests {
     #expect(environment.composerDrafts.draft(forServer: "local")?.composerText == "unsent")
     #expect(environment.settings.hasCompletedOnboarding)
     let launchKeyPrefixes = [
-      NavigationCacheStore.keyPrefix, NavigationCacheStore.indexKey, ConfigOptionCache.defaultKey,
+      ConfigOptionCache.defaultKey,
       ComposerDraftStore.defaultKey, ComposerDraftStore.defaultPaneKey, "settings",
     ]
     #expect(

@@ -24,14 +24,18 @@ struct WorkspaceGitSyncTests {
   @Test("A workspace's branch and pull request arrive with its record and are there on a cold start")
   func gitSurvivesColdStart() async throws {
     let persistence = InMemoryStore()
+    let cacheFixture = try ClientCacheFixture()
+    defer { cacheFixture.tearDown() }
+    let cache = try cacheFixture.makeCache()
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/workspace-git"))
     let workspace = workspace(in: project)
-    let previous = NavigationFixture(persistence: persistence)
+    let previous = NavigationFixture(persistence: persistence, clientCache: cache)
     await previous.install(projects: [project], workspaces: [workspace])
     #expect(previous.workspaces.workspace(id: workspace.id)?.git == git)
     PersistenceEncoding.drain()
+    await cache.flush()
 
-    let relaunched = NavigationFixture(persistence: persistence)
+    let relaunched = NavigationFixture(persistence: persistence, clientCache: try cacheFixture.makeCache())
 
     #expect(relaunched.workspaces.workspace(id: workspace.id)?.git == git)
   }

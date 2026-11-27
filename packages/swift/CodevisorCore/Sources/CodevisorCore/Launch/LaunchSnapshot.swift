@@ -3,6 +3,7 @@ import CodevisorClient
 public struct LaunchSnapshot: Equatable, Sendable {
   public var localDataFailure: String?
   public var hasLocalData: Bool
+  public var hasCachedContent: Bool
   public var serverState: LocalCodevisorServerState?
   public var dataUpgrade: LocalDataUpgradeProgress?
   public var availability: ServerAvailability
@@ -12,6 +13,7 @@ public struct LaunchSnapshot: Equatable, Sendable {
   public init(
     localDataFailure: String? = nil,
     hasLocalData: Bool,
+    hasCachedContent: Bool = false,
     serverState: LocalCodevisorServerState? = nil,
     dataUpgrade: LocalDataUpgradeProgress? = nil,
     availability: ServerAvailability = .waiting(.connecting),
@@ -20,6 +22,7 @@ public struct LaunchSnapshot: Equatable, Sendable {
   ) {
     self.localDataFailure = localDataFailure
     self.hasLocalData = hasLocalData
+    self.hasCachedContent = hasCachedContent
     self.serverState = serverState
     self.dataUpgrade = dataUpgrade
     self.availability = availability

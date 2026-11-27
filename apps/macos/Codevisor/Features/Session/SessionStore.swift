@@ -176,7 +176,6 @@ final class SessionStore {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.isGuestInHostWorkspace = isHostedElsewhere(session)
-    controller.transcriptCache = environment.transcriptCache
     controller.clientCache = environment.clientCache
     controller.configureExistingSession(session)
     return controller

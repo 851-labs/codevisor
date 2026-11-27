@@ -100,6 +100,53 @@ public final class ClientCache: Sendable {
     }
   }
 
+  func loadNavigation() -> [String: ServerNavigationSnapshot] {
+    do {
+      let snapshots = try navigation.snapshots()
+      for (machineId, snapshot) in snapshots { written.record(snapshot, machineId: machineId) }
+      return snapshots
+    } catch {
+      recover(from: error, during: "navigation.load")
+      return [:]
+    }
+  }
+
+  func adoptLegacyNavigation(_ snapshots: [String: ServerNavigationSnapshot]) throws {
+    guard try navigation.machineIds().isEmpty else { return }
+
+    for (machineId, snapshot) in snapshots {
+      try navigation.write(snapshot, over: nil, machineId: machineId, at: now())
+    }
+  }
+
+  func transcriptPage(of chat: CachedChatKey) async -> Data? {
+    await work.perform { [self] in
+      do {
+        try transcripts.markOpened(chat, at: now())
+        return try transcripts.page(of: chat)
+      } catch {
+        recover(from: error, during: "transcript.load")
+        return nil
+      }
+    }
+  }
+
+  func forgetTranscript(_ chat: CachedChatKey) {
+    enqueueInOrder("transcript.forget.\(chat.machineId).\(chat.chatId)") { cache in
+      try cache.transcripts.remove(chat)
+    }
+  }
+
+  private func storedFile(_ file: CachedFileKey, variant: AttachmentCacheTables.Variant) -> Data? {
+    guard let name = try? attachments.fileName(of: file, variant: variant) else { return nil }
+    guard let data = files.read(named: name) else {
+      try? attachments.forgetFile(file, variant: variant)
+      return nil
+    }
+    try? attachments.touch(file, at: now())
+    return data
+  }
+
   func flush() async {
     await work.flush()
   }
@@ -171,6 +218,12 @@ public final class ClientCache: Sendable {
 }
 
 extension ClientCache: ServerFileCaching {
+  public func cachedFile(machineId: String, fileId: String, preview: Bool) async -> Data? {
+    let file = CachedFileKey(machineId: machineId, fileId: fileId)
+    let variant: AttachmentCacheTables.Variant = preview ? .preview : .original
+    return await work.perform { [self] in storedFile(file, variant: variant) }
+  }
+
   public func cacheFile(_ data: Data, machineId: String, fileId: String, preview: Bool) {
     recordFile(data, variant: preview ? .preview : .original, file: CachedFileKey(machineId: machineId, fileId: fileId))
   }

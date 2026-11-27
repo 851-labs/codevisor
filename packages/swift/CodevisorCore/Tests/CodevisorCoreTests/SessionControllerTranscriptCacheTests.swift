@@ -26,6 +26,35 @@ struct SessionControllerTranscriptCacheTests {
     #expect(fixture.userTexts() == ["fresh"])
   }
 
+  @Test("An opened chat shows its cached transcript before anything connects")
+  func cachedTranscriptShowsWithoutConnecting() async throws {
+    let fixture = try Fixture()
+    defer { fixture.tearDown() }
+
+    await awaitObserved { fixture.controller.model != nil }
+
+    #expect(fixture.userTexts() == ["saved"])
+    #expect(fixture.controller.showsCachedTranscript)
+  }
+
+  @Test("A transcript shown while the machine was unreachable gives way to the live chat once it connects")
+  func cachedDisplayFromAnUnreachableClientIsReplaced() async throws {
+    let fixture = try Fixture()
+    defer { fixture.tearDown() }
+    fixture.client.openSessionFailure = .invalidResponse
+    await awaitObserved { fixture.controller.model != nil }
+    let cached = fixture.controller.model
+    let live = FakeSessionServerClient(sessionId: fixture.sessionId)
+    live.openSessionResponse = fixture.client.openSessionResponse
+
+    fixture.controller.adoptServerClient(live, forServer: "local")
+    await fixture.controller.connectIfNeeded()
+
+    #expect(fixture.controller.model !== cached)
+    #expect(fixture.userTexts() == ["fresh"])
+    #expect(!fixture.controller.showsCachedTranscript)
+  }
+
   @Test("A failed open still shows the saved page")
   func failedOpenShowsSavedPage() async throws {
     let fixture = try Fixture()
@@ -64,20 +93,20 @@ struct SessionControllerTranscriptCacheTests {
     let sessionId = UUID()
     let client: FakeSessionServerClient
     let controller: SessionController
-    let cacheDirectory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("transcripts-\(UUID().uuidString)", isDirectory: true)
+    let cacheFixture: ClientCacheFixture
 
     init() throws {
       let project = Project.fromFolder(URL(fileURLWithPath: "/fixture/project"), serverId: "local")
-      let cache = TranscriptPageCache(directory: cacheDirectory)
+      cacheFixture = try ClientCacheFixture()
+      let cache = try cacheFixture.makeCache()
       let saved = Self.openResponse(sessionId: sessionId, project: project, text: "saved")
-      cache.store(saved, machineId: "local", sessionId: sessionId)
+      cache.recordOpenedTranscript(saved, chat: CachedChatKey(machineId: "local", chatId: sessionId))
       client = FakeSessionServerClient(sessionId: sessionId)
       client.openSessionResponse = try JSONDecoder().decode(
         ServerSessionOpenResponse.self, from: Self.openResponse(sessionId: sessionId, project: project, text: "fresh"))
       controller = SessionController(
         project: project, configCache: ConfigOptionCache(store: InMemoryStore()), serverClient: client)
-      controller.transcriptCache = cache
+      controller.clientCache = cache
       controller.configureExistingSession(
         ChatSession(
           id: sessionId, projectId: project.id, serverId: "local", harnessId: "codex", agentSessionId: "agent-1",
@@ -93,7 +122,7 @@ struct SessionControllerTranscriptCacheTests {
 
     func tearDown() {
       controller.model?.shutdown()
-      try? FileManager.default.removeItem(at: cacheDirectory)
+      cacheFixture.tearDown()
     }
 
     static func openResponse(sessionId: UUID, project: Project, text: String) -> Data {

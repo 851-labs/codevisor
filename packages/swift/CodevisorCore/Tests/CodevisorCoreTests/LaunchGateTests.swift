@@ -52,6 +52,18 @@ struct LaunchGateTests {
     #expect(gate.phase(for: snapshot) == .ready)
   }
 
+  @Test("Opens straight into what it last knew, without waiting for this Mac's server")
+  func opensIntoCachedContent() {
+    let gate = LaunchGate()
+    let cached = LaunchSnapshot(hasLocalData: true, hasCachedContent: true, availability: .waiting(.starting))
+    let unreachable = LaunchSnapshot(
+      hasLocalData: true, hasCachedContent: true, serverState: .unavailable("Waiting for this Mac's server"))
+
+    #expect(gate.phase(for: cached) == .ready)
+    #expect(gate.phase(for: unreachable) == .ready)
+    #expect(gate.phase(for: LaunchSnapshot(hasLocalData: true, availability: .waiting(.starting))) == .starting)
+  }
+
   @Test("Can't continue past local data that failed to open")
   func blocksOnLocalData() {
     var gate = LaunchGate()

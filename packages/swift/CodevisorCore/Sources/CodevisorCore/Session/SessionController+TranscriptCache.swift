@@ -46,13 +46,12 @@ extension SessionController {
     in model: SessionModel, transport: ServerSessionTransport, sessionId: UUID, serverId: String,
     loadsExistingHistory: Bool
   ) -> Task<Void, Never>? {
-    guard setupPhases.isEmpty, self.model == nil, let transcriptCache else { return nil }
+    guard setupPhases.isEmpty, self.model == nil, let recorder = cacheRecorder else { return nil }
     transcriptCacheLoadGeneration &+= 1
     let generation = transcriptCacheLoadGeneration
-    return Task { [weak self, weak model] in
-      let page = await Self.loadCachedTranscriptPage(
-        cache: transcriptCache, transport: transport, machineId: serverId, sessionId: sessionId)
-      guard let self, let model, let page, transcriptCacheLoadGeneration == generation,
+    return Task { [weak self] in
+      let page = await recorder.cachedPage(through: transport)
+      guard let self, let page, transcriptCacheLoadGeneration == generation,
         setupPhases.isEmpty, self.model == nil
       else { return }
       model.showCachedHistory(page)
@@ -64,14 +63,40 @@ extension SessionController {
     }
   }
 
+  func showCachedTranscript() {
+    guard model == nil, !isConnecting, let serverClient, let serverSession else { return }
+
+    let transport = recordingPages(of: ServerSessionTransport(client: serverClient, sessionId: serverSession.id))
+    let model = makeServerSessionModel(
+      transport: transport, harnessId: serverSession.harnessId, sessionId: serverSession.id)
+    _ = startCachedTranscriptLoad(
+      in: model, transport: transport, sessionId: serverSession.id, serverId: serverSession.serverId,
+      loadsExistingHistory: hasExistingAgentSession)
+  }
+
+  public var showsCachedTranscript: Bool {
+    model != nil && model === cachedTranscriptModel
+  }
+
+  func cachedDisplay(reusableWith client: any CodevisorServerClienting) -> SessionModel? {
+    guard let cached = cachedTranscriptModel, cached === model else { return nil }
+    guard cached.transport.uses(client) else { return nil }
+
+    return cached
+  }
+
+  func retireCachedDisplay() {
+    cachedTranscriptModel?.shutdown()
+    cachedTranscriptModel = nil
+  }
+
   var cacheRecorder: SessionCacheRecorder? {
     guard let clientCache, let serverSession else { return nil }
 
     return SessionCacheRecorder(cache: clientCache, machineId: serverSession.serverId, chatId: serverSession.id)
   }
 
-  func rememberOpenedTranscript(_ data: Data, machineId: String, sessionId: UUID) {
-    transcriptCache?.store(data, machineId: machineId, sessionId: sessionId)
+  func rememberOpenedTranscript(_ data: Data) {
     cacheRecorder?.recordOpened(data)
   }
 
@@ -88,7 +113,7 @@ extension SessionController {
 
     Task { [weak model] in
       guard let transport = model?.transport else { return }
-      _ = try? await transport.transcriptPage(limit: SessionModel.initialTranscriptPageSize)
+      guard (try? await transport.transcriptPage(limit: SessionModel.initialTranscriptPageSize)) != nil else { return }
       guard let model else { return }
       recorder.audit(model)
     }
@@ -96,18 +121,5 @@ extension SessionController {
 
   func supersedeCachedTranscriptLoad() {
     transcriptCacheLoadGeneration &+= 1
-  }
-
-  @concurrent
-  nonisolated static func loadCachedTranscriptPage(
-    cache: TranscriptPageCache, transport: ServerSessionTransport, machineId: String, sessionId: UUID
-  ) async -> TranscriptHistoryPage? {
-    guard let data = await cache.load(machineId: machineId, sessionId: sessionId) else { return nil }
-    guard let cached = try? JSONDecoder().decode(ServerSessionOpenResponse.self, from: data) else {
-      cache.remove(machineId: machineId, sessionId: sessionId)
-      return nil
-    }
-    let page = transport.historyPage(from: cached.transcript)
-    return page.conversation.isEmpty ? nil : page
   }
 }

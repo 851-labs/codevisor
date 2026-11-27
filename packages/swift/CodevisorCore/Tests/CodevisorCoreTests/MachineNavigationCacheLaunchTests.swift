@@ -9,7 +9,8 @@ import Testing
 struct MachineNavigationCacheLaunchTests {
   @Test("A machine with a cache on disk starts cached, its workspaces visible before any network")
   func cachedMachineShowsWorkspacesOffline() async throws {
-    let launch = await CachedLaunch.make()
+    let launch = try await CachedLaunch.make()
+    defer { launch.cacheFixture.tearDown() }
     let fake = launch.serverClient()
     let controller = MachineController(
       store: InMemoryStore(), projectList: launch.fixture.projectList, clientFactory: { _ in fake })
@@ -28,7 +29,8 @@ struct MachineNavigationCacheLaunchTests {
 
   @Test("A full sync moves a cached machine to current and sends the changes made meanwhile")
   func fullSyncResumesOutbox() async throws {
-    let launch = await CachedLaunch.make()
+    let launch = try await CachedLaunch.make()
+    defer { launch.cacheFixture.tearDown() }
     let fake = launch.serverClient()
     let controller = MachineController(
       store: InMemoryStore(), projectList: launch.fixture.projectList, clientFactory: { _ in fake })
@@ -60,9 +62,12 @@ private struct CachedLaunch {
   let session: ChatSession
   let workspace: Workspace
   let snapshot: ServerNavigationSnapshot
+  let cacheFixture: ClientCacheFixture
 
-  static func make() async -> CachedLaunch {
+  static func make() async throws -> CachedLaunch {
     let persistence = InMemoryStore()
+    let cacheFixture = try ClientCacheFixture()
+    let cache = try cacheFixture.makeCache()
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/cached-launch"))
     let session = ChatSession(projectId: project.id, serverId: "local", title: "Cached chat")
     let workspace = Workspace(
@@ -71,13 +76,14 @@ private struct CachedLaunch {
     let snapshot = ServerNavigationSnapshot.fixture(
       projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
 
-    let previous = NavigationFixture(persistence: persistence)
+    let previous = NavigationFixture(persistence: persistence, clientCache: cache)
     await previous.install(projects: [project], sessions: [session], workspaces: [workspace], cursor: 0)
     PersistenceEncoding.drain()
+    await cache.flush()
 
     return CachedLaunch(
-      fixture: NavigationFixture(persistence: persistence), project: project, session: session,
-      workspace: workspace, snapshot: snapshot)
+      fixture: NavigationFixture(persistence: persistence, clientCache: try cacheFixture.makeCache()),
+      project: project, session: session, workspace: workspace, snapshot: snapshot, cacheFixture: cacheFixture)
   }
 
   func serverClient() -> SyncFakeServerClient {
