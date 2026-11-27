@@ -134,6 +134,16 @@
         "p95" : 90
       },
       "judder_ms" : 1.3,
+      "long_gaps" : {
+        "over250_ms" : {
+          "count" : 0,
+          "total_ms" : 0
+        },
+        "over500_ms" : {
+          "count" : 0,
+          "total_ms" : 0
+        }
+      },
       "network" : "N0",
       "repetition" : 1,
       "resolution" : "R1",

@@ -26,12 +26,16 @@ enum LoopbackSummary {
       let freezes = result.freezes.map { "\($0.count) (\(format($0.ratio * 100))%)" } ?? "–"
       return row([
         result.scene, result.network, pair(result.e2eMs), format(result.updatesPerS), format(result.shownRatio),
-        freezes, result.bitrateMbps.map { format($0.p50) } ?? "–", loss, result.valid ? "yes" : "no",
+        freezes, tally(result.longGaps?.over250Ms), tally(result.longGaps?.over500Ms),
+        result.bitrateMbps.map { format($0.p50) } ?? "–", loss, result.valid ? "yes" : "no",
       ])
     }
     return [
-      row(["scene", "network", "e2e p50/p95 ms", "updates/s", "shown", "freezes", "Mbit/s p50", "lost", "valid"]),
-      row(Array(repeating: "---", count: 9)),
+      row([
+        "scene", "network", "e2e p50/p95 ms", "updates/s", "shown", "freezes", "gaps > 250 ms", "gaps > 500 ms",
+        "Mbit/s p50", "lost", "valid",
+      ]),
+      row(Array(repeating: "---", count: 11)),
     ] + rows
   }
 
@@ -47,6 +51,10 @@ enum LoopbackSummary {
 
   private static func row(_ cells: [String]) -> String {
     "| " + cells.joined(separator: " | ") + " |"
+  }
+
+  private static func tally(_ tally: BenchLongGaps.Tally?) -> String {
+    tally.map { "\($0.count) (\(format($0.totalMs / 1_000)) s)" } ?? "–"
   }
 
   private static func pair(_ distribution: BenchDistribution?) -> String {

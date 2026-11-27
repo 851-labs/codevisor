@@ -23,6 +23,7 @@ struct BenchLoopbackAnalysisTests {
     #expect(result.gapMs == BenchDistribution([100, 100, 200, 100, 100, 100]))
     #expect(result.judderMs == 100)
     #expect(result.freezes == nil, "a scene that idles between changes has no freezes")
+    #expect(result.longGaps == nil, "nor long gaps: its gaps are the scene's own idle time")
   }
 
   @Test func framesTheSourceNeverProducedAreNotLatencySamples() {
@@ -119,6 +120,7 @@ struct BenchLoopbackAnalysisTests {
     analysis.apply(to: &result)
 
     #expect(result.freezes == BenchFreezes(gapsMs: Array(repeating: 100, count: 7), activeDurationMs: 800))
+    #expect(result.longGaps == BenchLongGaps(gapsMs: Array(repeating: 100, count: 7)))
   }
 
   private static var result: BenchResult {

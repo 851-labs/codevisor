@@ -51,6 +51,7 @@ enum BenchReportFixture {
     result.gapMs = distribution([16.7, 16.7, 18, 50.1])
     result.judderMs = 1.3
     result.freezes = BenchFreezes(count: 0, totalMs: 0, ratio: 0, perMinute: 0, pauses: 0, pausesTotalMs: 0)
+    result.longGaps = BenchLongGaps(gapsMs: [16.7, 16.7, 18, 50.1])
     result.bitrateMbps = .init(p50: 41.2, p95: 77, max: 120.4, totalMb: 310.2)
     result.cpuPct = .init(host: .init(p50: 31, p95: 44), viewer: .init(p50: 18, p95: 22))
     result.energyMw = .init(host: 820, viewer: 610)

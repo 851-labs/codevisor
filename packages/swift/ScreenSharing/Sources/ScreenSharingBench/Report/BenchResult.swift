@@ -87,6 +87,7 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var gapMs: BenchDistribution?
   public var judderMs: Double?
   public var freezes: BenchFreezes?
+  public var longGaps: BenchLongGaps?
   public var bitrateMbps: Bitrate?
   public var cpuPct: PerMachine<ProcessUsage>?
   public var systemCpuPct: PerMachine<Double>?

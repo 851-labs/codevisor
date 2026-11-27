@@ -25,9 +25,10 @@ struct Tier2Markdown {
   private var targetTable: String {
     let header = [
       "| Scene | Resolution | Network | System | Encoded px | Image age p50 ms | p95 | p50 above floor | Updates/s | "
-        + "Shown | Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Host system CPU % | Viewer system CPU % | "
-        + "Mbit/s p50 | Valid reps |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        + "Shown | Gap p95 ms | Freezes | Gaps > 250 ms | s in them | Gaps > 500 ms | s in them | Host CPU % | "
+        + "Viewer CPU % | Host system CPU % | Viewer system CPU % | Mbit/s p50 | Valid reps |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- "
+        + "| --- | --- | --- | --- |",
     ]
     let rows = Tier2Group.all(report.results).flatMap { group in
       BenchSystem.allCases.compactMap { system in

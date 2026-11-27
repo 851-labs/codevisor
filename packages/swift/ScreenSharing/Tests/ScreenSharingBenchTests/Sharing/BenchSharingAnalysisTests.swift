@@ -35,6 +35,7 @@ struct BenchSharingAnalysisTests {
         countsFreezes: true))
 
     #expect(analysis.freezes?.count == 1)
+    #expect(analysis.longGaps?.over250Ms.count == 1 && analysis.longGaps?.over500Ms.count == 0)
     #expect(analysis.skippedVersions == 24)
   }
 
@@ -44,6 +45,7 @@ struct BenchSharingAnalysisTests {
 
     #expect(analysis.window.startNs == Self.viewerNs(onGlassOf: 1) + BenchSharingWindow.warmUpNs)
     #expect(analysis.imageAgeMs == nil && analysis.producedVersions == nil && analysis.freezes == nil)
+    #expect(analysis.longGaps == nil)
     #expect(abs(analysis.updatesPerS - 60) < 0.1)
   }
 

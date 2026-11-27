@@ -10,6 +10,7 @@ public struct BenchSharingAnalysis: Sendable, Equatable {
   public let gapMs: BenchDistribution?
   public let judderMs: Double?
   public let freezes: BenchFreezes?
+  public let longGaps: BenchLongGaps?
   public let viewerUnreadableFraction: Double
   public let hostUnreadableFraction: Double?
 
@@ -37,6 +38,7 @@ public struct BenchSharingAnalysis: Sendable, Equatable {
     gapMs = BenchDistribution(gaps)
     judderMs = Self.judderMs(gaps: gapMs, produced: inWindow)
     freezes = countsFreezes ? BenchFreezes(gapsMs: gaps, activeDurationMs: window.durationMs) : nil
+    longGaps = countsFreezes ? BenchLongGaps(gapsMs: gaps) : nil
     viewerUnreadableFraction = Self.unreadableFraction(viewer, in: window, mappedBy: { $0 })
     hostUnreadableFraction = host.map { Self.unreadableFraction($0, in: window, mappedBy: fromHostNs) }
   }
