@@ -19,7 +19,6 @@ extension SessionStore {
   static func isInProgress(_ controller: SessionController) -> Bool {
     controller.pendingUserMessage != nil
       || isActivelyWorking(controller)
-      || controller.isWaitingOnBackgroundTasks
   }
 
   func isSettingUp(_ session: ChatSession) -> Bool {

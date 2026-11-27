@@ -8,7 +8,7 @@ import Database from "better-sqlite3"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
-import { run, tempDirs } from "../test-support.js"
+import { goalUpdate, run, tempDirs } from "../test-support.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
 const ATTENTION_SETTLE_GRACE_MS = 12_000
@@ -27,7 +27,7 @@ describe("@codevisor/server attention settle", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
   })
   afterEach(() => vi.useRealTimers())
-  it("settles a released subagent hold after the grace and publishes one flip", async () => {
+  it("settles a released goal hold after the grace and publishes one flip", async () => {
     const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
     const attentionEvents: Array<EventEnvelope> = []
@@ -45,11 +45,7 @@ describe("@codevisor/server attention settle", () => {
         turnId: "turn-1",
         turnState: "started"
       })
-      await appendAndPublish(db, fanout, "session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("active"))
       await appendAndPublish(db, fanout, "session.updated", session.id, {
         initiatedBy: "user",
         stopReason: "end_turn",
@@ -58,7 +54,7 @@ describe("@codevisor/server attention settle", () => {
       })
       expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
 
-      await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+      await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("complete"))
       await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS - 1)
       expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
       await vi.advanceTimersByTimeAsync(1)
@@ -94,18 +90,14 @@ describe("@codevisor/server attention settle", () => {
         turnId: "turn-1",
         turnState: "started"
       })
-      await appendAndPublish(db, fanout, "session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
+      await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("active"))
       await appendAndPublish(db, fanout, "session.updated", session.id, {
         initiatedBy: "user",
         stopReason: "end_turn",
         turnId: "turn-1",
         turnState: "ended"
       })
-      await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+      await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("complete"))
       await appendAndPublish(db, fanout, "session.updated", session.id, {
         initiatedBy: "agent",
         turnId: "turn-2",
@@ -151,13 +143,7 @@ describe("@codevisor/server attention settle", () => {
           turnState: "started"
         })
       )
-      await run(
-        db.appendEvent("session.updated", session.id, {
-          backgroundTasks: [
-            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-          ]
-        })
-      )
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
       await run(
         db.appendEvent("session.updated", session.id, {
           initiatedBy: "user",
@@ -173,7 +159,7 @@ describe("@codevisor/server attention settle", () => {
         await scheduler.recover()
         expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
 
-        await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
+        await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("complete"))
         await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
         expect(await run(db.getSessionSummary(session.id))).toMatchObject({
           latestAttentionSequence: 1,
@@ -203,13 +189,7 @@ describe("@codevisor/server attention settle", () => {
           turnState: "started"
         })
       )
-      await run(
-        db.appendEvent("session.updated", session.id, {
-          backgroundTasks: [
-            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-          ]
-        })
-      )
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
       await run(
         db.appendEvent("session.updated", session.id, {
           initiatedBy: "user",
@@ -218,7 +198,7 @@ describe("@codevisor/server attention settle", () => {
           turnState: "ended"
         })
       )
-      await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
       expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
 
       const closed = makeAttentionSettleScheduler(db, fanout)
@@ -262,13 +242,7 @@ describe("@codevisor/server attention settle", () => {
           turnState: "started"
         })
       )
-      await run(
-        db.appendEvent("session.updated", session.id, {
-          backgroundTasks: [
-            { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-          ]
-        })
-      )
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
       await run(
         db.appendEvent("session.updated", session.id, {
           initiatedBy: "user",
@@ -277,7 +251,7 @@ describe("@codevisor/server attention settle", () => {
           turnState: "ended"
         })
       )
-      await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
       const sqlite = new Database(filename)
       try {
         sqlite

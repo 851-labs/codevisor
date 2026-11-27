@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { publishPromptQueue } from "../routes/prompt-queue.js"
 import { appendAndPublish, makeEventFanout, run } from "../server-context.js"
+import { goalUpdate } from "../test-support.js"
 import { field } from "../unknown-values.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
@@ -20,8 +21,8 @@ describe("queue completion notifications", () => {
   afterEach(() => vi.useRealTimers())
 
   it.each([false, true])(
-    "publishes one unread edge after the queue drains (subagent: %s)",
-    async (hasSubagent) => {
+    "publishes one unread edge after the queue drains (goal: %s)",
+    async (hasGoal) => {
       const db = await run(makeDatabase({ filename: ":memory:", serverId: "local" }))
       const fanout = await run(makeEventFanout)
       const scheduler = makeAttentionSettleScheduler(db, fanout)
@@ -43,22 +44,22 @@ describe("queue completion notifications", () => {
             turnId: item.id,
             turnState: "started"
           })
-          if (hasSubagent) {
-            await appendAndPublish(db, fanout, "session.updated", session.id, {
-              backgroundTasks: [
-                { id: "child", description: "Check", status: "running", taskType: "subagent" }
-              ]
-            })
+          if (hasGoal) {
+            await appendAndPublish(db, fanout, "session.updated", session.id, goalUpdate("active"))
           }
           await appendAndPublish(db, fanout, "session.updated", session.id, {
             turnId: item.id,
             turnState: "ended",
             stopReason: "end_turn"
           })
-          if (hasSubagent) {
-            await appendAndPublish(db, fanout, "session.updated", session.id, {
-              backgroundTasks: []
-            })
+          if (hasGoal) {
+            await appendAndPublish(
+              db,
+              fanout,
+              "session.updated",
+              session.id,
+              goalUpdate("complete")
+            )
           }
           await vi.advanceTimersByTimeAsync(24_000)
           expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
@@ -66,7 +67,7 @@ describe("queue completion notifications", () => {
         }
         expect(attention.some((event) => unreadCount(event) > 0)).toBe(false)
         await publishPromptQueue(db, fanout, session.id)
-        if (hasSubagent) {
+        if (hasGoal) {
           await vi.advanceTimersByTimeAsync(11_999)
           expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
           await vi.advanceTimersByTimeAsync(1)

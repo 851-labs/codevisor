@@ -176,7 +176,6 @@ final class ChatControllerCache {
     return controller.pendingUserMessage != nil
       || controller.isSending
       || controller.isSettingUp
-      || controller.isWaitingOnBackgroundTasks
   }
 
   func isSettingUp(_ session: ChatSession) -> Bool {

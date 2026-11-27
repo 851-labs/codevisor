@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
-import { run } from "./test-support.js"
+import { goalUpdate, run } from "./test-support.js"
 
 const attentionFixture = async () => {
   const db = await run(makeDatabase({ filename: ":memory:", serverId: "local" }))
@@ -98,19 +98,13 @@ describe("queued prompt attention", () => {
     }
   })
 
-  it("revalidates a released subagent deadline against newly queued work", async () => {
+  it("revalidates a released goal deadline against newly queued work", async () => {
     const { db, session, summary, start, finish, publishQueue } = await attentionFixture()
     try {
       await start("parent")
-      await run(
-        db.appendEvent("session.updated", session.id, {
-          backgroundTasks: [
-            { id: "child", description: "Check", status: "running", taskType: "subagent" }
-          ]
-        })
-      )
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
       await finish("parent")
-      await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+      await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
       expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
       const pending = await run(db.createPromptQueueItem(session.id, "follow-up"))
       vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)

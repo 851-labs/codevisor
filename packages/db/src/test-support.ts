@@ -5,6 +5,7 @@ import { join } from "node:path"
 import {
   NavigationDelta,
   type EventEnvelope,
+  type GoalStatus,
   type Project,
   type SessionSummary
 } from "@codevisor/api"
@@ -27,6 +28,18 @@ export const tempDatabase = (): string => {
 
 export const run = <A>(effect: Effect.Effect<A, DatabaseError>): Promise<A> =>
   Effect.runPromise(effect)
+
+export const goalUpdate = (status: GoalStatus) => ({
+  goal: {
+    objective: "Ship it",
+    status,
+    tokenBudget: null,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  }
+})
 
 const readDatabase = <A>(filename: string, read: (sqlite: Database.Database) => A): A => {
   const sqlite = new Database(filename, { readonly: true })

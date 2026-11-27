@@ -6,7 +6,14 @@ import type { EventEnvelope, ExecutionJob, SessionSummary } from "@codevisor/api
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
-import { idleRouteState, makeServices, run, tempDirs, waitFor } from "../test-support.js"
+import {
+  goalUpdate,
+  idleRouteState,
+  makeServices,
+  run,
+  tempDirs,
+  waitFor
+} from "../test-support.js"
 import { makeTurnDispatchListener } from "./prompt-queue.js"
 import { makeSessionEventOutbox } from "./session-event-outbox.js"
 import { finalAssistantText, makeSessionEventRouter } from "./session-event-router.js"
@@ -101,7 +108,7 @@ const turn = async (router: Router, sessionId: string, turnId: string, reply: st
 }
 
 describe("turn ends", () => {
-  it("reports a turn held by a running subagent once it settles", async () => {
+  it("reports a turn held by an active goal once it settles", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     onTestFinished(() => {
       vi.useRealTimers()
@@ -112,9 +119,9 @@ describe("turn ends", () => {
     await router.watch(watcher, worker)
     router.routeState.activeTurnSessions.add(watcher)
 
-    await router.emit(worker, { backgroundTasks: [subagent] })
+    await router.emit(worker, goalUpdate("active"))
     await turn(router, worker, "turn-1", "Waiting on the review")
-    await router.emit(worker, { backgroundTasks: [] })
+    await router.emit(worker, goalUpdate("complete"))
     await router.router.recover()
     const beforeSettle = await router.queuedFor(watcher)
     vi.setSystemTime(new Date(Date.now() + ATTENTION_SETTLE_GRACE_MS))
@@ -125,6 +132,22 @@ describe("turn ends", () => {
     expect(beforeSettle).toEqual([])
     expect(await router.queuedFor(watcher)).toEqual([
       expect.stringContaining("\nWaiting on the review\n")
+    ])
+  })
+
+  it("reports a turn right away even while a sub agent keeps running", async () => {
+    const router = await setUpRouter()
+    const watcher = await router.chat()
+    const worker = await router.chat()
+    await router.watch(watcher, worker)
+    router.routeState.activeTurnSessions.add(watcher)
+
+    await router.emit(worker, { backgroundTasks: [subagent] })
+    await turn(router, worker, "turn-1", "Started a review in the background")
+    await waitFor(async () => (await router.queuedFor(watcher)).length > 0)
+
+    expect(await router.queuedFor(watcher)).toEqual([
+      expect.stringContaining("\nStarted a review in the background\n")
     ])
   })
 
