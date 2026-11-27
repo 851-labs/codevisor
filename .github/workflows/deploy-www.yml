@@ -7,6 +7,8 @@ on:
     paths:
       - "apps/www/**"
       - "scripts/release/install.test.mjs"
+      - "scripts/release/install-desktop.test.mjs"
+      - "scripts/release/install-test-support.mjs"
       - "packages/api/**"
       - "bun.lock"
       - ".github/workflows/deploy-www.yml"
@@ -28,7 +30,7 @@ jobs:
       - name: Verify installer
         run: |
           sh -n apps/www/public/install.sh
-          node --test scripts/release/install.test.mjs
+          node --test scripts/release/install.test.mjs scripts/release/install-desktop.test.mjs
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck

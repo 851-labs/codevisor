@@ -40,6 +40,14 @@ export const runPrompt = async <A>(prompt: Prompt.Prompt<A>): Promise<A> => {
   }
 }
 
+export const runPromptOr = async <A>(prompt: Prompt.Prompt<A>, whenCancelled: A): Promise<A> => {
+  try {
+    return await Effect.runPromise(Prompt.run(prompt).pipe(Effect.provide(NodeServices.layer)))
+  } catch {
+    return whenCancelled
+  }
+}
+
 type RunCli = (command: (deps: CliDeps) => Promise<number>) => Effect.Effect<void>
 
 const readStdin = async (): Promise<string> => (await text(process.stdin)).trim()

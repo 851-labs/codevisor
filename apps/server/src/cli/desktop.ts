@@ -70,6 +70,11 @@ export const desktopSetupCommand = async (
   return startTheDesktop(deps, server, equipped, options)
 }
 
+export const desktopStatusIfAnswered = async (
+  deps: DesktopCliDeps,
+  options: DesktopCommandOptions = {}
+): Promise<DesktopStatus | undefined> => (await desktopServer(deps, options)).peek()
+
 export const desktopStatusCommand = async (
   deps: DesktopCliDeps,
   options: DesktopCommandOptions = {}
