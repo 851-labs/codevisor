@@ -26,7 +26,8 @@
     private var video: ScreenSharingVideoConfiguration?
     public private(set) var cadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
     private var displayRefresh: @MainActor () -> Double? = { nil }
-    private let reconfigurations = ScreenSharingCaptureTurns()
+    private var reconfigurations = ScreenSharingCaptureTurns()
+    var queuedReconfigurations: Int { reconfigurations.queued }
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
@@ -114,6 +115,7 @@
         }
       }
       let stream = try target.makeCaptureStream(configuration: streamConfiguration, output: output)
+      reconfigurations = ScreenSharingCaptureTurns()
       self.output = output
       self.stream = stream
       video = configuration
@@ -133,7 +135,17 @@
 
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
       guard stream != nil, output != nil else { throw ScreenSharingError.unavailable("Capture is not running.") }
-      try await reconfigurations.run { [self] in try await apply(configuration) }
+      try await inTurn { [self] in try await apply(configuration) }
+    }
+
+    private func inTurn(_ work: @escaping @MainActor () async throws -> Void) async throws {
+      let queue = reconfigurations
+      try await queue.run { [self] in
+        guard queue === reconfigurations else { return try await inTurn(work) }
+
+        await startSettled()
+        try await work()
+      }
     }
 
     private func apply(_ configuration: ScreenSharingVideoConfiguration) async throws {
@@ -150,8 +162,7 @@
     }
 
     public func followDisplayRefresh() async throws {
-      await startSettled()
-      try await reconfigurations.run { [self] in try await applyDisplayRefresh() }
+      try await inTurn { [self] in try await applyDisplayRefresh() }
     }
 
     private func applyDisplayRefresh() async throws {
@@ -180,12 +191,15 @@
     }
 
     public func setShowsCursor(_ shows: Bool) async throws {
-      guard shows != showsCursor else { return }
-      let previous = showsCursor
-      showsCursor = shows
-      do { try await reconfigure() } catch {
-        showsCursor = previous
-        throw error
+      try await inTurn { [self] in
+        guard shows != showsCursor else { return }
+
+        let previous = showsCursor
+        showsCursor = shows
+        do { try await applyCurrent() } catch {
+          showsCursor = previous
+          throw error
+        }
       }
     }
 
@@ -194,13 +208,15 @@
       guard range == .standard || pixelFormat == kCVPixelFormatType_32BGRA else {
         throw ScreenSharingError.invalid("High dynamic range needs a 4:4:4 capture.")
       }
-      let previous = dynamicRange
-      dynamicRange = range
-      do { try await reconfigure() } catch {
-        dynamicRange = previous
-        throw error
+      try await inTurn { [self] in
+        let previous = dynamicRange
+        dynamicRange = range
+        do { try await applyCurrent() } catch {
+          dynamicRange = previous
+          throw error
+        }
+        output?.metrics.label("captureDynamicRange", range.rawValue)
       }
-      output?.metrics.label("captureDynamicRange", range.rawValue)
     }
 
     public func setCapturesAudio(_ captures: Bool) async throws {
@@ -208,17 +224,24 @@
       guard captures != capturesAudio else { return }
       changing += 1
       defer { changing -= 1 }
+      guard captures, stream != nil, let restart, let video else {
+        return try await inTurn { [self] in
+          let previous = capturesAudio
+          capturesAudio = captures
+          do { try await applyCurrent() } catch {
+            capturesAudio = previous
+            throw error
+          }
+        }
+      }
+
       let previous = capturesAudio
       capturesAudio = captures
       do {
-        if captures, stream != nil, let restart, let video {
-          try await stop()
-          try await start(
-            target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics,
-            displayRefresh: displayRefresh)
-        } else {
-          try await reconfigure()
-        }
+        try await stop()
+        try await start(
+          target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics,
+          displayRefresh: displayRefresh)
       } catch {
         capturesAudio = previous
         throw error
@@ -246,12 +269,10 @@
       for waiter in waiters { waiter.resume() }
     }
 
-    private func reconfigure() async throws {
-      await startSettled()
-      try await reconfigurations.run { [self] in
-        guard let video, stream != nil else { return }
-        try await apply(video)
-      }
+    private func applyCurrent() async throws {
+      guard let video, stream != nil else { return }
+
+      try await apply(video)
     }
 
     static func streamConfiguration(

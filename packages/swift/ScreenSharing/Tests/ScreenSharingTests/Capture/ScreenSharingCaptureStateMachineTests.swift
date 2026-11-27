@@ -423,11 +423,13 @@
     private let lock = NSLock()
     private var recorded: [Call] = []
     private var lastUpdate: Settings?
+    private var allUpdates: [Settings] = []
     private var failures: [Call: any Error] = [:]
     private var gates: [Call: CaptureGate] = [:]
 
     var calls: [Call] { lock.withLock { recorded } }
     var updated: Settings? { lock.withLock { lastUpdate } }
+    var updates: [Settings] { lock.withLock { allUpdates } }
     var startFailure: (any Error)? {
       get { lock.withLock { failures[.start] } }
       set { lock.withLock { failures[.start] = newValue } }
@@ -469,6 +471,7 @@
       try lock.withLock {
         recorded.append(.update)
         lastUpdate = settings
+        allUpdates.append(settings)
         if let failure = failures[.update] { throw failure }
       }
     }

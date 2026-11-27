@@ -75,4 +75,15 @@ struct ScreenSharingFrameCatchUpTests {
 
     #expect(!starved)
   }
+
+  @Test func aBurstOfUpdatesWithinOneRefreshCountsAsOneArrival() {
+    var catchUp = ScreenSharingFrameCatchUp()
+    for burst in Int64(0)...4 {
+      for update in Int64(0)...4 { catchUp.arrived(atNs: Self.refresh(burst * 4) + update * 2_000_000) }
+    }
+
+    let starved = catchUp.committed(waitedNs: Self.starvedWaitNs, atNs: Self.refresh(16) + 12_000_000)
+
+    #expect(!starved)
+  }
 }

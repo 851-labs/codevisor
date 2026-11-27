@@ -168,9 +168,8 @@ extension ScreenSharingHostService {
 
 extension ScreenSharingHostService {
   func followDisplayRefresh(_ session: ScreenSharingHostSession) {
-    let previous = session.refreshFollow
+    session.refreshFollow?.cancel()
     session.refreshFollow = Task { [weak session] in
-      await previous?.value
       guard let session, !session.stopping, !Task.isCancelled else { return }
       do { try await session.capture.followDisplayRefresh() } catch is CancellationError {
         return

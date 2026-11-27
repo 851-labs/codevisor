@@ -8,7 +8,7 @@ struct ScreenSharingCaptureCadenceTests {
     cadence.minimumFrameInterval.convertScale(1_000_000_000, method: .default).value
   }
 
-  @Test(arguments: [60.0, 59.94, 60.4, 50, 30])
+  @Test(arguments: [60.0, 59.94, 60.4, 60.6, 50, 30])
   func aDisplayOfAtMostSixtyHertzIsCapturedAtEveryRefresh(refreshHz: Double) {
     let cadence = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
 

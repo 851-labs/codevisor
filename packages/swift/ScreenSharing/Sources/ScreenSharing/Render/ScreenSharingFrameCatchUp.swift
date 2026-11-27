@@ -19,6 +19,8 @@ struct ScreenSharingFrameCatchUp {
   }
 
   mutating func arrived(atNs nowNs: Int64) {
+    if let last = arrivals.last, nowNs - last < periodNs / 2 { return }
+
     arrivals.append(nowNs)
     if arrivals.count > Self.trackedArrivals { arrivals.removeFirst() }
   }

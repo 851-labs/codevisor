@@ -1,15 +1,18 @@
 @MainActor
 final class ScreenSharingCaptureTurns {
   private var tail: Task<Void, Never>?
+  private(set) var queued = 0
 
-  func run<Value: Sendable>(_ work: @escaping @MainActor () async throws -> Value) async throws -> Value {
+  func run(_ work: @escaping @MainActor () async throws -> Void) async throws {
     let previous = tail
-    let turn = Task { @MainActor () async throws -> Value in
+    queued += 1
+    let turn = Task { @MainActor [self] in
+      defer { queued -= 1 }
       await previous?.value
-      return try await work()
+      try await work()
     }
     tail = Task { _ = try? await turn.value }
-    return try await withTaskCancellationHandler {
+    try await withTaskCancellationHandler {
       try await turn.value
     } onCancel: {
       turn.cancel()

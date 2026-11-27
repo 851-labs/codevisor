@@ -55,7 +55,7 @@
 
       #expect(fixture.stream.calls == [.start, .update])
       #expect(fixture.stream.updated?.interval == Self.everyRefresh)
-      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: 60))
+      #expect(fixture.capture.cadence.displayRefreshHz == 60)
       #expect(fixture.metrics.label("captureDisplayRefreshHz") == "60.0")
     }
 
@@ -77,7 +77,7 @@
       refresh.hz = 60
       await #expect(throws: CancellationError.self) { try await fixture.capture.followDisplayRefresh() }
 
-      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: 120))
+      #expect(fixture.capture.cadence.displayRefreshHz == 120)
     }
 
     @Test func aStoppedCaptureDoesNotReconfigure() async throws {
@@ -119,7 +119,7 @@
 
       try await fixture.start()
 
-      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: nil))
+      #expect(fixture.capture.cadence.displayRefreshHz == ScreenSharingCaptureCadence.unknownDisplayRefreshHz)
     }
 
     @Test func aFollowThatFailsAfterARestartKeepsTheNewCaptureCadence() async throws {
@@ -139,7 +139,7 @@
       held.release()
       _ = try? await follow.value
 
-      #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: 144))
+      #expect(fixture.capture.cadence.displayRefreshHz == 144)
     }
 
     @Test func aRefreshRateThatCannotBeReadMidSessionKeepsTheCadence() async throws {
@@ -179,12 +179,79 @@
       refresh.hz = 60
       let follow = Task { @MainActor in try await fixture.capture.followDisplayRefresh() }
       for _ in 0..<20 { await Task.yield() }
+      #expect(fixture.capture.queuedReconfigurations == 2, "the follow waits behind the resize")
       held.release()
       try await resize.value
       try await follow.value
 
       #expect(fixture.stream.calls == [.start, .update, .update])
       #expect(fixture.stream.updated?.width == 1280 && fixture.stream.updated?.interval == Self.everyRefresh)
+    }
+
+    @Test func aReconfigurationStuckOnAStoppedStreamDoesNotHoldUpTheRestartedOne() async throws {
+      let fixture = CaptureFixture()
+      try await start(fixture, refresh: Refresh(60))
+      let stuck = CaptureGate()
+      fixture.stream.holdUpdate = stuck
+      let lost = Task { @MainActor in try? await fixture.capture.update(configuration: .init(width: 1280, height: 720))
+      }
+      await stuck.entered.wait()
+      try await fixture.capture.stop()
+      fixture.stream.holdUpdate = nil
+      try await start(fixture, refresh: Refresh(60))
+
+      try await fixture.capture.setShowsCursor(false)
+
+      #expect(fixture.stream.updated?.showsCursor == false)
+      stuck.release()
+      await lost.value
+    }
+
+    @Test func aReconfigurationWaitsForARestartInProgress() async throws {
+      let fixture = CaptureFixture()
+      let refresh = Refresh(120)
+      try await start(fixture, refresh: refresh)
+      try await fixture.capture.stop()
+      let starting = CaptureGate()
+      fixture.stream.holdStart = starting
+      let restart = Task { @MainActor in try await start(fixture, refresh: refresh) }
+      await starting.entered.wait()
+
+      refresh.hz = 60
+      let follow = Task { @MainActor in try await fixture.capture.followDisplayRefresh() }
+      for _ in 0..<20 { await Task.yield() }
+      #expect(fixture.stream.calls == [.start, .stop], "no update while the stream is starting")
+      starting.release()
+      try await restart.value
+      try await follow.value
+
+      #expect(fixture.stream.calls == [.start, .stop, .start, .update])
+      #expect(fixture.stream.updated?.interval == Self.everyRefresh)
+    }
+
+    @Test func aSettingWaitingBehindAResizeIsNotAppliedByTheResize() async throws {
+      let fixture = CaptureFixture(capture: ScreenSharingCapture(pixelFormat: kCVPixelFormatType_32BGRA))
+      try await start(fixture, refresh: Refresh(60))
+      let held = CaptureGate()
+      fixture.stream.holdUpdate = held
+      let first = Task { @MainActor in try await fixture.capture.update(configuration: .init(width: 1600, height: 900))
+      }
+      await held.entered.wait()
+      let resize = Task { @MainActor in try await fixture.capture.update(configuration: .init(width: 1280, height: 720))
+      }
+      let hdr = Task { @MainActor in try await fixture.capture.setDynamicRange(.high) }
+      for _ in 0..<20 { await Task.yield() }
+
+      held.release()
+      try await first.value
+      try await resize.value
+      try await hdr.value
+
+      let formats = fixture.stream.updates.map(\.pixelFormat)
+      #expect(
+        formats == [
+          kCVPixelFormatType_32BGRA, kCVPixelFormatType_32BGRA, ScreenSharingDynamicRange.highCapturePixelFormat,
+        ])
     }
   }
 #endif
