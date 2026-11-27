@@ -13,9 +13,10 @@ const tasksIn = () => {
   tempDirs.push(directory)
   const home = mkdtempSync(join(tmpdir(), "codevisor-exec-home-"))
   tempDirs.push(home)
-  const tasks = makeExecTasks({ directory, shell: "/bin/sh", env: { ...process.env, HOME: home } })
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home }
+  const tasks = makeExecTasks({ directory, shell: "/bin/sh", env: () => env })
   onTestFinished(() => tasks.closeAll())
-  return { tasks, directory }
+  return { tasks, directory, env }
 }
 
 const finishedTask = () => {
@@ -39,6 +40,22 @@ describe("exec tasks", () => {
     expect(result.output).toContain(directory.split("/").at(-1))
     expect(result.output).toContain("oops")
     expect(readFileSync(result.outputPath, "utf8")).toBe(result.output)
+  })
+
+  it("gives each command the environment as it is when the command starts", async () => {
+    const { tasks, directory, env } = tasksIn()
+    const whereWindowsGo = {
+      command: 'echo "display=$DISPLAY"',
+      description: "env",
+      cwd: directory
+    }
+
+    env.DISPLAY = ":1"
+    const first = await tasks.run({ ...whereWindowsGo, timeoutMs: 30_000 })
+    env.DISPLAY = ":4"
+    const second = await tasks.run({ ...whereWindowsGo, timeoutMs: 30_000 })
+
+    expect([first.output, second.output]).toEqual(["display=:1\n", "display=:4\n"])
   })
 
   it("keeps only the end of very long output and points at the full log", async () => {

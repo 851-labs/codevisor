@@ -6,6 +6,7 @@ import { type PrivateSocket, privateSocket } from "../routes/private-socket.js"
 import {
   type DesktopSetup,
   desktopSetup,
+  recordedDesktopService,
   SCREEN_SHARING_CONFIG_FILE
 } from "../routes/screen-sharing-vnc.js"
 import { HttpFailure } from "../server-context.js"
@@ -112,15 +113,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return text === undefined ? { kind: "absent" } : desktopSetup(text)
   }
 
-  const recordedService = (): string | undefined => {
-    try {
-      const config: unknown = JSON.parse(system.readText(configPath) ?? "")
-      const isRecorded = typeof config === "object" && config !== null && "service" in config
-      return isRecorded && typeof config.service === "string" ? config.service : undefined
-    } catch {
-      return undefined
-    }
-  }
+  const recordedService = (): string | undefined =>
+    recordedDesktopService(system.readText(configPath) ?? "")
 
   const shared = (): Shared => {
     const setup = setUp()

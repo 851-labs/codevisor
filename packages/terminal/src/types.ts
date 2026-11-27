@@ -64,6 +64,7 @@ export interface TerminalSpawner {
 export interface TerminalManagerConfig {
   readonly defaultShell?: string
   readonly env?: NodeJS.ProcessEnv
+  readonly launchEnvironment?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   readonly spawner?: TerminalSpawner
   readonly platform?: NodeJS.Platform
   readonly userShell?: () => string | undefined

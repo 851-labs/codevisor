@@ -237,6 +237,14 @@ const processIsAlive = (pid: number): boolean => {
   }
 }
 
+export const monitorOwnerIfAppOwned = (
+  ownerPid: number | undefined,
+  lease: Pick<ServerLease, "release">
+): (() => void) | undefined => {
+  if (ownerPid === undefined) return undefined
+  return monitorAppOwner({ ownerPid, lease })
+}
+
 export const monitorAppOwner = (options: {
   readonly ownerPid: number
   readonly lease: Pick<ServerLease, "release">

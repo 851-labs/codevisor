@@ -39,10 +39,11 @@ const fakeMachines = (): MachineLink => ({
 
 const execServer = async () => {
   const { services } = await makeServices("server-a")
+  const env = { ...process.env, HOME: tempDir("codevisor-exec-home-") }
   const execTasks = makeExecTasks({
     directory: tempDir("codevisor-exec-"),
     shell: "/bin/sh",
-    env: { ...process.env, HOME: tempDir("codevisor-exec-home-") }
+    env: () => env
   })
   const mirrors = makeMirrorStore(tempDir("codevisor-mirrors-"))
   const workspaceMirrors = makeWorkspaceMirrors({

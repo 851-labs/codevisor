@@ -1,5 +1,6 @@
 import { join } from "node:path"
 
+import type { LaunchEnvironment } from "../desktop/desktop-environment.js"
 import { makeExecTasks, type ExecTasks } from "./exec-tasks.js"
 import { fleetMirrorTransport, type MirrorTransportSelf } from "./fleet-mirror-transport.js"
 import type { MachineLink } from "./machine-link.js"
@@ -19,12 +20,13 @@ export interface RemoteWorkServices {
 export const makeRemoteWorkServices = (
   dataDir: string,
   link: Pick<MachineLink, "invoke" | "isGone">,
+  launchEnvironment: LaunchEnvironment,
   self: MirrorTransportSelf
 ): RemoteWorkServices => {
   const execTasks = makeExecTasks({
     directory: join(dataDir, "exec-tasks"),
     shell: process.env.SHELL || "/bin/sh",
-    env: process.env
+    env: () => launchEnvironment(process.env)
   })
   const remoteExecTasks = makeRemoteExecTasks({ self, link, local: execTasks })
   const mirrors = makeMirrorStore(join(dataDir, "mirrors"))

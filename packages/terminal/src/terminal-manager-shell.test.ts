@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest"
 import { makeTerminalManager } from "./index.js"
 import { run, makeSpawner } from "./test-support.js"
 
+const terminal = (sessionId: string) => ({ sessionId, cwd: "/tmp", cols: 80, rows: 24 })
+
 describe("@codevisor/terminal terminal manager shell resolution", () => {
   it("launches macOS shells with the bundled Ghostty terminal environment", async () => {
     const spawner = makeSpawner()
@@ -45,6 +47,23 @@ describe("@codevisor/terminal terminal manager shell resolution", () => {
     expect(readFileSync(join(terminfoDirectory!, "g", "ghostty"))).toEqual(
       readFileSync(join(terminfoDirectory!, "67", "ghostty"))
     )
+  })
+
+  it("applies the launch environment to each terminal as it starts, after its overrides", async () => {
+    const spawner = makeSpawner()
+    let display = ":1"
+    const manager = makeTerminalManager({
+      env: { SHELL: "/bin/sh" },
+      platform: "linux",
+      spawner,
+      launchEnvironment: (env) => (env.DISPLAY === undefined ? { ...env, DISPLAY: display } : env)
+    })
+    await run(manager.createTerminal(terminal("first")))
+    display = ":4"
+    await run(manager.createTerminal(terminal("after-the-desktop-moved")))
+    await run(manager.createTerminal(terminal("with-its-own-display"), { DISPLAY: ":9" }))
+
+    expect(spawner.requests.map((request) => request.env.DISPLAY)).toEqual([":1", ":4", ":9"])
   })
 
   it("uses the portable 256-color terminal name for Linux profiles", async () => {

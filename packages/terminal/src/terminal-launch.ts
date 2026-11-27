@@ -14,6 +14,7 @@ import type { TerminalManagerConfig, TerminalSpawnRequest } from "./types.js"
 
 interface LaunchDefaults {
   readonly env: NodeJS.ProcessEnv
+  readonly launchEnvironment: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   readonly defaultShell: string
   readonly platform: NodeJS.Platform
   readonly terminalName: string
@@ -34,7 +35,8 @@ const captureDefaults = (config: TerminalManagerConfig): LaunchDefaults => {
   const terminalName = resolveTerminalName(platform)
   const ghosttyResources = config.ghosttyResourcesDirectory ?? BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
   const userId = resolveUserId(config)
-  return { env, defaultShell, platform, terminalName, ghosttyResources, userId }
+  const launchEnvironment = config.launchEnvironment ?? ((launched) => launched)
+  return { env, launchEnvironment, defaultShell, platform, terminalName, ghosttyResources, userId }
 }
 
 const prepareEnvironment = (
@@ -53,7 +55,7 @@ const prepareEnvironment = (
   } else {
     delete env.TERMINFO
   }
-  return env
+  return defaults.launchEnvironment(env)
 }
 
 const prepareLaunch = (

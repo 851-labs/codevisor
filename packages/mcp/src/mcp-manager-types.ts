@@ -254,6 +254,7 @@ export interface McpManagerConfig {
   readonly machine?: { readonly id: string; readonly name: string }
   readonly remoteInvoker?: GatewayRemoteInvoker
   readonly serverKind?: "local" | "remote"
+  readonly launchEnvironment?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   readonly skillSource?: SkillSource
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly catalog?: McpCatalogResolver
