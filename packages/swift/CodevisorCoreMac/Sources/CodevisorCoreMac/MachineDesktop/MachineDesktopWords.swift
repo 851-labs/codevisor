@@ -3,6 +3,7 @@ import Foundation
 
 public enum MachineDesktopWords {
   public static let setupCommand = "codevisor desktop setup"
+  public static let setupTerminalName = "Desktop setup"
   public static let noDesktop = "No desktop on this machine yet."
   public static let setUpBefore = "This machine's desktop was set up for an older version of Codevisor."
   public static let installing = "Installing Xfce and TigerVNC…"
@@ -21,8 +22,20 @@ public enum MachineDesktopWords {
     "Update Codevisor on \(machine) to set up a desktop."
   }
 
-  public static func notRunning(_ status: ServerDesktopStatus, on machine: String) -> String {
-    "The desktop on \(machine) isn't running: \(sentence(from: status.problem ?? "no reason found"))"
+  public static func notRunning(on machine: String) -> String { "The desktop on \(machine) isn't running." }
+
+  public static func notChecked(on machine: String) -> String { "Couldn't check the desktop on \(machine)." }
+
+  public static func notRemoved(on machine: String, unsharing: Bool) -> String {
+    unsharing ? "Couldn't stop sharing the desktop on \(machine)." : "Couldn't remove the desktop on \(machine)."
+  }
+
+  public static func notStarted(on machine: String) -> String { "The desktop on \(machine) didn't start." }
+
+  public static func notSetUp(on machine: String) -> String { "Setting up the desktop on \(machine) didn't work." }
+
+  public static func notInstalled(on machine: String) -> String {
+    "Installing Xfce and TigerVNC on \(machine) didn't work."
   }
 
   public static func administratorNeeded(for what: String, on machine: String) -> String {
@@ -37,8 +50,8 @@ public enum MachineDesktopWords {
     "Codevisor doesn't know how to install packages on \(status.system). Install these on \(machine), then try again: \(status.missing.joined(separator: ", "))."
   }
 
-  public static func stillMissing(_ status: ServerDesktopStatus) -> String {
-    "Still missing after the install: \(status.missing.joined(separator: ", "))."
+  public static func stillMissing(on machine: String) -> String {
+    "Xfce and TigerVNC are still missing on \(machine) after the install."
   }
 
   public static func notSeen(on machine: String) -> String {
@@ -47,18 +60,5 @@ public enum MachineDesktopWords {
 
   public static func runInATerminal(_ command: String) -> String {
     "Run this in a terminal there: \(command)"
-  }
-
-  public static func sentence(from text: String) -> String {
-    let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-      .filter { !$0.isEmpty }
-    guard let first = lines.first else { return text }
-    guard first.hasSuffix(":"), let last = lines.last, last != first else { return first }
-
-    return "\(first) \(last)"
-  }
-
-  public static func sentence(from error: any Error) -> String {
-    sentence(from: error.localizedDescription)
   }
 }

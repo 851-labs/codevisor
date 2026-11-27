@@ -8,7 +8,7 @@ struct MachineDesktopInspectorCard: View {
   let isExpanded: Binding<Bool>
   let isActive: Bool
   let onOpen: () -> Void
-  let onOpenTerminal: ((String) -> Void)?
+  let onOpenTerminal: ((TerminalToOpen) -> Void)?
   @Environment(AppEnvironment.self) private var environment
   @State private var view = UUID()
 
@@ -19,7 +19,7 @@ struct MachineDesktopInspectorCard: View {
       ) {
         MachineDesktopSetupCard(
           machine: machine, store: setup, sharesDesktop: sharesDesktop, isStreaming: isStreaming, onOpen: onOpen,
-          onOpenTerminal: onOpenTerminal.map { open in { open(setup.terminalCommand) } }, view: view
+          onOpenTerminal: onOpenTerminal.map { open in { open(setup.setupTerminal) } }, view: view
         )
         .id(machine.id)
       }

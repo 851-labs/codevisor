@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCore
 import ComposableArchitecture
 import Foundation
 
@@ -41,6 +42,10 @@ public struct MachineDesktopSetup {
 
     public var terminalCommand: String {
       status?.setupCommand ?? MachineDesktopWords.setupCommand
+    }
+
+    public var setupTerminal: TerminalToOpen {
+      TerminalToOpen(command: terminalCommand, name: MachineDesktopWords.setupTerminalName)
     }
 
     public func showsDesktop(sharedByMachine: Bool) -> Bool {
@@ -124,7 +129,7 @@ public struct MachineDesktopSetup {
       case .looked(.failure(let error)):
         guard state.phase == .checking || state.isBusy else { return .none }
         state.lastAttempt = .look
-        state.phase = Self.phase(for: error)
+        state.phase = Self.phase(for: error, else: MachineDesktopWords.notChecked(on: state.machineName))
         return .none
 
       case .machineRenamed(let name):
@@ -146,12 +151,19 @@ public struct MachineDesktopSetup {
 
       case .removed(.failure(let error)):
         state.lastAttempt = .remove
-        state.phase = Self.phase(for: error)
+        state.phase = Self.phase(
+          for: error,
+          else: MachineDesktopWords.notRemoved(on: state.machineName, unsharing: state.status?.unmanaged == true))
         return .none
 
-      case .started(.failure(let error)), .stepped(.failure(let error)):
+      case .started(.failure(let error)):
         state.lastAttempt = .setup
-        state.phase = Self.phase(for: error)
+        state.phase = Self.phase(for: error, else: MachineDesktopWords.notStarted(on: state.machineName))
+        return .none
+
+      case .stepped(.failure(let error)):
+        state.lastAttempt = .setup
+        state.phase = Self.phase(for: error, else: MachineDesktopWords.notSetUp(on: state.machineName))
         return .none
 
       case .setUpButtonTapped:
@@ -298,13 +310,13 @@ public struct MachineDesktopSetup {
     case .none: .noDesktop(setUpBefore: false)
     case .outdated: .noDesktop(setUpBefore: true)
     case .running: .ready
-    case .stopped: .failed(MachineDesktopWords.notRunning(status, on: machine))
+    case .stopped: .failed(MachineDesktopWords.notRunning(on: machine))
     }
   }
 
-  static func phase(for error: any Error) -> Phase {
+  static func phase(for error: any Error, else sentence: String) -> Phase {
     if case .httpStatus(404, _) = error as? CodevisorServerClientError { return .updateNeeded }
 
-    return .failed(MachineDesktopWords.sentence(from: error))
+    return .failed(sentence)
   }
 }

@@ -230,7 +230,7 @@ private struct ScreenSharingPaneView: View {
   private func openTerminal(_ setup: StoreOf<MachineDesktopSetup>) -> (() -> Void)? {
     guard pane.opensTerminals, let command = pane.onGroupCommand else { return nil }
 
-    return { command(.openTerminal(typing: setup.terminalCommand)) }
+    return { command(.openTerminal(setup.setupTerminal)) }
   }
 
   private var sharesDesktop: Bool { environment.machines.desktopMachine(for: pane.machineId) != nil }

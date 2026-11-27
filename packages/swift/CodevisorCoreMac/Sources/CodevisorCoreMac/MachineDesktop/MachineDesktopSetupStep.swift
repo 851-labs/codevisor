@@ -24,9 +24,7 @@ public enum MachineDesktopSetupStep: Equatable, Sendable {
     after status: ServerDesktopStatus, given: Given, on machine: String
   ) -> MachineDesktopSetupStep {
     if status.busy != nil { return .waitForPackages }
-    if given.askedForPackages, let failure = status.failure {
-      return .fail(MachineDesktopWords.sentence(from: failure))
-    }
+    if given.askedForPackages, status.failure != nil { return .fail(MachineDesktopWords.notInstalled(on: machine)) }
     if status.oldDesktop != nil { return oldDesktopStep(status, given, machine) }
     if !status.missing.isEmpty { return packagesStep(status, given, machine) }
     if status.state == .running, status.keepsRunning == true { return .done }
@@ -54,7 +52,7 @@ public enum MachineDesktopSetupStep: Equatable, Sendable {
     guard status.sudo == .passwordless else {
       return .needAdministrator(MachineDesktopWords.administratorNeeded(for: "Installing packages", on: machine))
     }
-    guard !given.askedForPackages else { return .fail(MachineDesktopWords.stillMissing(status)) }
+    guard !given.askedForPackages else { return .fail(MachineDesktopWords.stillMissing(on: machine)) }
 
     return .installPackages
   }

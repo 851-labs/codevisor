@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCore
 import ComposableArchitecture
 import Foundation
 import Testing
@@ -22,7 +23,7 @@ struct MachineDesktopSetupTests {
       (Self.equipped, .noDesktop(setUpBefore: false)),
       (Status(state: .outdated), .noDesktop(setUpBefore: true)),
       (Self.running, .ready),
-      (stopped, .failed("The desktop on hetzner isn't running: the desktop's session isn't up")),
+      (stopped, .failed("The desktop on hetzner isn't running.")),
     ]
     for (status, phase) in cases {
       let machine = Machine(statuses: [status])
@@ -33,7 +34,7 @@ struct MachineDesktopSetupTests {
     }
   }
 
-  @Test("A server from before desktop setup is asked to update, and any other failure is said in one sentence")
+  @Test("An older server is asked to update, and any other failure is one plain sentence")
   func serversThatCannotAnswer() async {
     let older = Machine(statuses: [], failure: CodevisorServerClientError.httpStatus(404, ""))
     let olderStore = older.store()
@@ -46,7 +47,7 @@ struct MachineDesktopSetupTests {
     let brokenStore = broken.store()
     await brokenStore.send(.task)
     await brokenStore.receive(\.looked)
-    #expect(brokenStore.state.phase == .failed("The database is locked."))
+    #expect(brokenStore.state.phase == .failed("Couldn't check the desktop on hetzner."))
   }
 
   @Test("With passwordless sudo the server installs, and the card says one line per phase until the desktop is up")
@@ -86,7 +87,7 @@ struct MachineDesktopSetupTests {
     #expect(store.state.terminalCommand == "codevisor desktop setup")
   }
 
-  @Test("The terminal is given the server's own way to run setup when the server says it")
+  @Test("The terminal is named Desktop setup and is given the server's own way to run setup when the server says it")
   func terminalCommandFromTheServer() async {
     var status = Self.bare
     status.sudo = .password
@@ -94,10 +95,13 @@ struct MachineDesktopSetupTests {
     let store = Machine(statuses: [status]).store()
     await store.send(.setUpButtonTapped)
     await store.receive(\.stepped)
-    #expect(store.state.terminalCommand == "/opt/codevisor/bin/node /opt/codevisor/cli.js desktop setup")
+    #expect(
+      store.state.setupTerminal
+        == TerminalToOpen(
+          command: "/opt/codevisor/bin/node /opt/codevisor/cli.js desktop setup", name: "Desktop setup"))
   }
 
-  @Test("Failures are one sentence with the reason: an unknown system, a failed install, a desktop that didn't start")
+  @Test("Failures are plain sentences, without paths or raw output")
   func failures() async {
     var unknown = Self.bare
     unknown.packageManager = nil
@@ -117,14 +121,20 @@ struct MachineDesktopSetupTests {
     await failedStore.send(.setUpButtonTapped)
     await failedStore.receive(\.stepped)
     await failedStore.receive(\.stepped)
-    #expect(failedStore.state.phase == .failed("Installing packages failed: E: Unable to locate package xfce4"))
+    #expect(failedStore.state.phase == .failed("Installing Xfce and TigerVNC on hetzner didn't work."))
+
+    let missingStore = Machine(statuses: [Self.bare, Self.bare]).store()
+    await missingStore.send(.setUpButtonTapped)
+    await missingStore.receive(\.stepped)
+    await missingStore.receive(\.stepped)
+    #expect(missingStore.state.phase == .failed("Xfce and TigerVNC are still missing on hetzner after the install."))
 
     let reason = #"{"error":"The desktop didn't start.\nXvnc: display :1 is taken"}"#
     let downStore = Machine(statuses: [Self.equipped], startFailure: .httpStatus(500, reason)).store()
     await downStore.send(.setUpButtonTapped)
     await downStore.receive(\.stepped)
     await downStore.receive(\.started)
-    #expect(downStore.state.phase == .failed("The desktop didn't start."))
+    #expect(downStore.state.phase == .failed("The desktop on hetzner didn't start."))
   }
 
   @Test("A failed install from an earlier try doesn't stop Try Again from installing")
@@ -228,9 +238,7 @@ struct MachineDesktopSetupTests {
     #expect(store.state.phase == .ready)
     await store.send(.machineChanged)
     await store.receive(\.looked)
-    #expect(
-      store.state.phase
-        == .failed("The desktop on hetzner isn't running: nothing at /root/.codevisor/run/codevisor-desktop.sock"))
+    #expect(store.state.phase == .failed("The desktop on hetzner isn't running."))
     #expect(!store.state.showsDesktop(sharedByMachine: true))
     await store.send(.tryAgainButtonTapped)
     await store.receive(\.stepped)
@@ -245,7 +253,7 @@ struct MachineDesktopSetupTests {
     let store = machine.store()
     await store.send(.task)
     await store.receive(\.looked)
-    #expect(store.state.phase == .failed("The server is busy."))
+    #expect(store.state.phase == .failed("Couldn't check the desktop on hetzner."))
     await store.send(.tryAgainButtonTapped)
     #expect(store.state.phase == .checking)
     await store.receive(\.looked)
@@ -263,7 +271,7 @@ struct MachineDesktopSetupTests {
     await store.send(.removeButtonTapped)
     await store.send(.confirmation(.presented(.remove)))
     await store.receive(\.removed)
-    #expect(store.state.phase == .failed("systemctl failed."))
+    #expect(store.state.phase == .failed("Couldn't remove the desktop on hetzner."))
     await store.send(.tryAgainButtonTapped)
     #expect(store.state.confirmation == MachineDesktopDialogs.dialog(.remove, on: "hetzner"))
     #expect(machine.calls.value == ["status", "remove"])
@@ -292,7 +300,7 @@ struct MachineDesktopSetupTests {
       #expect(!state.showsDesktop(sharedByMachine: false), "\(phase)")
     }
     state.status = Status(state: .stopped, problem: "the desktop's session isn't up")
-    state.phase = .failed("The desktop on hetzner isn't running: the desktop's session isn't up")
+    state.phase = .failed("The desktop on hetzner isn't running.")
     #expect(!state.showsDesktop(sharedByMachine: true))
     state.phase = .noDesktop(setUpBefore: false)
     #expect(!state.showsDesktop(sharedByMachine: true))
@@ -392,7 +400,7 @@ struct MachineDesktopSetupTests {
     await store.send(.task)
     await store.receive(\.looked)
     await store.send(.machineRenamed("build-box"))
-    #expect(store.state.phase == .failed("The desktop on build-box isn't running: the desktop's session isn't up"))
+    #expect(store.state.phase == .failed("The desktop on build-box isn't running."))
   }
 
 }

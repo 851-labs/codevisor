@@ -11,7 +11,7 @@ struct WorkspaceInspectorMachineView: View {
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
   let onOpenDesktop: () -> Void
-  let onOpenTerminal: ((String) -> Void)?
+  let onOpenTerminal: ((TerminalToOpen) -> Void)?
   @Environment(AppEnvironment.self) private var environment
   @State private var stats: (serverId: String, stats: ServerMachineStats)?
   @State private var latency: (serverId: String, milliseconds: Double)?

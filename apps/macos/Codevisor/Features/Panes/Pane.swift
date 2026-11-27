@@ -31,7 +31,7 @@ enum PaneGroupCommand {
   case nextSplit
   case closeTab
   case reopenClosedPane
-  case openTerminal(typing: String)
+  case openTerminal(TerminalToOpen)
 }
 
 @MainActor
