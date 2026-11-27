@@ -7,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 
 use crate::{
     fec::{self, Layout},
-    types::{Event, ReceivedFrame, Stats, give_up_after},
+    types::{Event, MAX_CROSSING, ReceivedFrame, Stats, give_up_after},
     wire::{self, Feedback, FrameFields, FrameReceipt, Kind, Nack, PacketHeader, Recovery, RefreshRequest},
 };
 
@@ -18,6 +18,10 @@ const TAIL_GAPS: f64 = 1.5;
 const GAP_DECAY: f64 = 63.0 / 64.0;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
 const MAX_REFRESH_SENDS: u32 = 50;
+const BUSY_WAITS: u32 = 4;
+const BUSY_PACKETS: u32 = 512;
+const PACE_GAIN: u32 = 16;
+const BACK_TO_BACK: u32 = 8;
 
 #[derive(Debug)]
 struct Assembly {
@@ -30,6 +34,7 @@ struct Assembly {
     first_rx: Option<Instant>,
     last_original_rx: Option<Instant>,
     original_bytes: usize,
+    originals: usize,
     last_rx: Option<Instant>,
     end_seen: bool,
     highest_index: Option<u16>,
@@ -37,6 +42,7 @@ struct Assembly {
     tail_limit: Option<usize>,
     next_nack: Option<Instant>,
     give_up_at: Option<Instant>,
+    busy_limit: Option<Instant>,
     whole_nacked_at: Option<Instant>,
     repaired: bool,
     used_fec: bool,
@@ -68,6 +74,7 @@ impl Assembly {
             first_rx: None,
             last_original_rx: None,
             original_bytes: 0,
+            originals: 0,
             last_rx: None,
             end_seen: true,
             highest_index: None,
@@ -75,6 +82,7 @@ impl Assembly {
             tail_limit: None,
             next_nack: None,
             give_up_at: None,
+            busy_limit: None,
             whole_nacked_at: None,
             repaired: false,
             used_fec: false,
@@ -127,11 +135,44 @@ impl Assembly {
         (limit < shape.layout.data_count + shape.parity_count).then_some(limit)
     }
 
+    fn patience(&self, wait: Wait) -> Duration {
+        let Some(shape) = self.shape else {
+            return wait.give_up;
+        };
+        let short = shape.layout.data_count.saturating_sub(self.received);
+        let own_pace = match (self.first_rx, self.last_original_rx) {
+            (Some(first), Some(last)) if self.originals > 1 => (last - first) / (self.originals - 1) as u32,
+            _ => Duration::ZERO,
+        };
+        (own_pace * short as u32 + wait.rtt).min(MAX_CROSSING).max(wait.give_up)
+    }
+
+    fn keep_waiting(&mut self, now: Instant, wait: Wait) {
+        let patience = self.patience(wait);
+        let own = now + patience;
+        let busy = now + (patience * BUSY_WAITS).max(wait.pace * BUSY_PACKETS).min(MAX_CROSSING).max(patience);
+        self.give_up_at = Some(self.give_up_at.map_or(own, |at| at.max(own)));
+        self.busy_limit = Some(self.busy_limit.map_or(busy, |limit| limit.max(busy)));
+    }
+
+    fn gives_up_at(&self, link_busy_until: Option<Instant>) -> Option<Instant> {
+        let own = self.give_up_at?;
+        let waited = link_busy_until.map_or(own, |busy| own.max(busy));
+        Some(waited.min(self.busy_limit.unwrap_or(own)).max(own))
+    }
+
     fn due(&self, now: Instant, retry: Duration) -> Vec<u16> {
         let mut wanted = self.wanted();
         wanted.retain(|index| self.requested[usize::from(*index)].is_none_or(|at| now >= at + retry));
         wanted
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Wait {
+    give_up: Duration,
+    rtt: Duration,
+    pace: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +216,8 @@ pub struct Receiver {
     rtt: Duration,
     streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
+    pace: Duration,
+    last_media_rx: Option<Instant>,
     outbox: VecDeque<Bytes>,
 }
 
@@ -186,6 +229,8 @@ impl Receiver {
             rtt: Duration::ZERO,
             streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
+            pace: Duration::ZERO,
+            last_media_rx: None,
             outbox: VecDeque::new(),
         }
     }
@@ -200,6 +245,11 @@ impl Receiver {
 
     fn give_up_after(&self) -> Duration {
         give_up_after(self.rtt, self.frame_interval)
+    }
+
+    fn link_busy_until(&self) -> Option<Instant> {
+        let gap = (self.pace * BACK_TO_BACK).max(self.tail_wait()).min(self.give_up_after());
+        self.last_media_rx.map(|at| at + gap)
     }
 
     fn retry_after(&self) -> Duration {
@@ -223,6 +273,7 @@ impl Receiver {
         let give_up = self.give_up_after();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
+            self.last_media_rx = Some(now);
             stats.duplicate_packets += 1;
             self.answer_resolved(now, header.stream, header.frame);
             return;
@@ -242,6 +293,7 @@ impl Receiver {
         let placeholder = stream.frames.contains_key(&header.frame);
         let assembly = stream.frames.entry(header.frame).or_insert_with(Assembly::unknown);
         if !matches!(assembly.state, State::Assembling) {
+            self.last_media_rx = Some(now);
             stats.duplicate_packets += 1;
             self.answer_resolved(now, header.stream, header.frame);
             return;
@@ -264,6 +316,7 @@ impl Receiver {
                     first_requested: vec![assembly.whole_nacked_at; shape.layout.data_count],
                     end_seen: placeholder,
                     give_up_at: assembly.give_up_at,
+                    busy_limit: assembly.busy_limit,
                     whole_nacked_at: assembly.whole_nacked_at,
                     next_nack: assembly.next_nack,
                     ..Assembly::unknown()
@@ -285,6 +338,7 @@ impl Receiver {
             stats.invalid_datagrams += 1;
             return;
         }
+        self.last_media_rx = Some(now);
         if slot.is_some() {
             stats.duplicate_packets += 1;
             return;
@@ -299,15 +353,18 @@ impl Receiver {
             if assembly.first_rx.is_some() {
                 assembly.original_bytes += datagram_len;
             }
+            assembly.originals += 1;
             if let Some(last) = assembly.last_original_rx {
-                self.gap_peak = self.gap_peak.max(now.saturating_duration_since(last));
+                let gap = now.saturating_duration_since(last);
+                self.gap_peak = self.gap_peak.max(gap);
+                self.pace = (self.pace * (PACE_GAIN - 1) + gap) / PACE_GAIN;
             }
             assembly.last_original_rx = Some(now);
         }
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
-        if let Some(at) = assembly.give_up_at {
-            assembly.give_up_at = Some(at.max(now + give_up));
+        if assembly.give_up_at.is_some() {
+            assembly.keep_waiting(now, Wait { give_up, rtt: self.rtt, pace: self.pace });
         }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
@@ -377,6 +434,8 @@ impl Receiver {
         self.send_refresh_requests(now, stats);
         let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
+        let link_busy_until = self.link_busy_until();
+        let wait = Wait { give_up, rtt: self.rtt, pace: self.pace };
         let retry = self.retry_after();
         let mut resolved = Vec::new();
         for (&stream_id, stream) in &mut self.streams {
@@ -384,7 +443,7 @@ impl Receiver {
                 if !matches!(assembly.state, State::Assembling) {
                     continue;
                 }
-                if assembly.give_up_at.is_some_and(|at| now >= at) {
+                if assembly.gives_up_at(link_busy_until).is_some_and(|at| now >= at) {
                     assembly.state = State::GivenUp;
                     resolved.push((stream_id, number));
                     continue;
@@ -417,7 +476,9 @@ impl Receiver {
                     if let Some(nack) = nack {
                         stats.nacks_sent += 1;
                         self.outbox.push_back(nack.encode());
-                        assembly.give_up_at.get_or_insert(now + give_up);
+                        if assembly.give_up_at.is_none() {
+                            assembly.keep_waiting(now, wait);
+                        }
                     }
                     let wanted = assembly.wanted();
                     let oldest = wanted.iter().filter_map(|index| assembly.requested[usize::from(*index)]).min();
@@ -430,6 +491,7 @@ impl Receiver {
     }
 
     pub fn poll_timeout(&self) -> Option<Instant> {
+        let link_busy_until = self.link_busy_until();
         let assembling = self
             .streams
             .values()
@@ -437,7 +499,7 @@ impl Receiver {
             .filter(|assembly| matches!(assembly.state, State::Assembling))
             .flat_map(|assembly| {
                 let tail = assembly.tail_at.filter(|_| !assembly.end_seen);
-                [tail, assembly.next_nack, assembly.give_up_at]
+                [tail, assembly.next_nack, assembly.gives_up_at(link_busy_until)]
             })
             .flatten();
         let refreshes = self.streams.values().filter_map(|stream| Some(stream.refresh?.next_send));

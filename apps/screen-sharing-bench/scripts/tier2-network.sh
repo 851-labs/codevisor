@@ -18,6 +18,7 @@ network_apply() {
     N0) return 0 ;;
     N3) network_shape 1 0.01 ;;
     N6) network_shape 25 0.001 bw 50Mbit/s queue 500Kbytes ;;
+    N7) network_shape 50 0.05 bw 1Mbit/s queue 500Kbytes ;;
     *) say "unknown network $network"; return 1 ;;
   esac
 }

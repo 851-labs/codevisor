@@ -10,7 +10,10 @@ enum Tier2NetworkCheck {
     }
   }
 
-  static let specs = ["N3": Spec(delayMs: 1, lossEachWay: 0.01), "N6": Spec(delayMs: 25, lossEachWay: 0.001)]
+  static let specs = [
+    "N3": Spec(delayMs: 1, lossEachWay: 0.01), "N6": Spec(delayMs: 25, lossEachWay: 0.001),
+    "N7": Spec(delayMs: 50, lossEachWay: 0.05),
+  ]
 
   static func describe(_ check: BenchResult.NetworkCheck?) -> String {
     guard let check else { return "–" }

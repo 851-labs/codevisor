@@ -22,6 +22,10 @@ enum Tier2V2Readings {
     return stages
   }
 
+  static func firstPictureMs(viewer: [String: JSONValue]?) -> Double? {
+    viewer?["first_picture_ms"]?.number
+  }
+
   static func counters(viewer: [String: JSONValue]?, host: [String: JSONValue]?) -> BenchMediaCounters? {
     guard let host, let viewer else { return nil }
 

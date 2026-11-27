@@ -202,7 +202,10 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   a keyframe instead (`ltr_refresh_keyframes`, the host's `encodedLTRRefreshKeyFrames`; the Tier 2 v2 table's "LTR
   refreshes as keyframes"), the reference acknowledgements the host rejected as stale (`stale_ltr_acknowledgements`,
   the host's `staleLTRAcknowledgements`: an acknowledgement for a token the host no longer holds for that tile;
-  absent in reports from before 851-4477), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters.
+  absent in reports from before 851-4477), keyframes, and the capacity estimate and round trip at the end. Drops are whole-scene counters. The result's `first_picture_ms`
+  (851-4477, the summary's "first picture ms") is the time from the first version the source produced, warm-up
+  included, to the first frame the viewer committed (or put on glass with `--onscreen`): how long a session takes to
+  show anything. The connection is already open then, so it times the first keyframe's trip, not the handshake.
 - **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and
@@ -233,7 +236,7 @@ minis are the only ARM64 CI runners for this repository and lil.tech: a plan who
 (each run's duration plus 30 s; runs of 30 to 50 s took 21 to 24 s more in November 2026) fails at once. `scenes`
 defaults to `scroll`: about 18 minutes with the floor and 3 repetitions of the two default systems, after the build and
 the C5 wait for a quiet machine, up to 10 minutes. C4 runs only when video is among the scenes. `network` picks N0 (no
-shaping), N3 or N6 for the whole dispatch, and a scene can name its own (`scenes: input,scroll@N3,typing@N3`): the
+shaping), N3, N6 or N7 for the whole dispatch, and a scene can name its own (`scenes: input,scroll@N3,typing@N3`): the
 viewer job loads dummynet rules into the `com.apple/codevisor-bench` pf anchor before the first run on a network and
 reloads them when the network changes (croissant's sudoers allows `dnctl` and `pfctl`), and its runs are named
 `NN-scroll-N3-<system>-<rep>`.
@@ -247,7 +250,9 @@ per copy. N3 then realized a 6.7–7.5 ms round trip with about 6% of probes los
 3.16 ms p50 round trip against 0.64 ms unshaped (dummynet's 1 ms delay holds a packet about 1.25 ms), and N6 at 53.4 ms. N6 (851-3822) is 25 ms of delay, 0.1%
 loss and 50 Mbit/s each way, with a 500 KB queue (about 80 ms at 50 Mbit/s, so the link queues rather than drops like
 N6's unlimited queue); dummynet has no jitter, so it lacks Tier 1 N6's 5 ms, and the rate limit's 10 ms tick makes
-the link release in bursts. The rules cover all of tamale's addresses (its IPv4 address and every
+the link release in bursts. N7 (851-4477) is 50 ms of delay, 5% loss and 1 Mbit/s each way, with the same 500 KB
+queue (4 s at that rate): the only two-Mac case slow enough for a session's first keyframe to still be in the link's
+queue while the connection settles its paths, which is where Tier 1's N7 lost it. The rules cover all of tamale's addresses (its IPv4 address and every
 address its Bonjour name resolves to, so Apple HP and Codevisor are shaped whichever path they pick), except the clock
 probes (UDP 47592), which keep C2 a clean clock reference. Before each run it probes tamale's second responder (UDP
 47596, shaped) for 10 s (160 probes) and records the round trip and loss that took effect (`network-check.json`, the
@@ -376,6 +381,11 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
+- The Codevisor viewer also reports `first_picture_ms` in `system.json` (851-4477): from the moment it starts to
+  connect its endpoint to the host until its first frame is presented, so the handshake is in it, unlike Tier 1's.
+  `tier2-report` copies it to the result and the v2 table's "First picture ms". The viewer waits up to 45 s for that
+  frame (20 s before, which a 1 Mbit/s link can exceed; the viewer job gives the whole start 90 s) and looks every
+  5 ms, so the figure is up to 5 ms late.
 - `view --control` (Codevisor, with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
   the first frame is shown, and marks itself ready only once granted: it sends a request, then a heartbeat every second,
   and forwards the product `ScreenSharingVideoSurface`'s input (its keyboard event tap and mouse handling) through

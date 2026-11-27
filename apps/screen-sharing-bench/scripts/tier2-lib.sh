@@ -18,6 +18,7 @@
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=30
+tier2_ready_limit_s=90
 tier2_settle_limit_s=600
 tier2_abort_wait_s=120
 tier2_plan_budget_s=1800
@@ -225,14 +226,14 @@ meet_on_build() {
 }
 
 tier2_check_inputs() {
-  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards|input)(@N[036])?"
+  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards|input)(@N[0367])?"
   [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || {
     echo "unknown scene or network in $TIER2_SCENES (scenes are like scroll or scroll@N3)" >&2
     return 1
   }
   [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
-  [[ "$TIER2_NETWORK" =~ ^N[036]$ ]] || { echo "network must be N0, N3 or N6, not $TIER2_NETWORK" >&2; return 1; }
+  [[ "$TIER2_NETWORK" =~ ^N[0367]$ ]] || { echo "network must be N0, N3, N6 or N7, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_VCP_FAIL_AFTER" =~ ^(0|[1-9][0-9]*)$ ]] && ((TIER2_VCP_FAIL_AFTER < TIER2_DURATION)) || {
     echo "vcp-fail-after must be whole seconds below the run's duration" >&2
     return 1
@@ -247,14 +248,24 @@ tier2_check_inputs() {
   }
   local system_pattern="(apple-hp|codevisor-v2-vcp|codevisor-v2)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
-  local runs planned_s
-  runs=$(($(tier2_plan | wc -l)))
-  planned_s=$((runs * (TIER2_DURATION + tier2_run_overhead_s)))
+  local runs=0 planned_s=0 index scene system rep scored network
+  while read -r index scene system rep scored network; do
+    runs=$((runs + 1))
+    planned_s=$((planned_s + TIER2_DURATION + $(tier2_run_overhead "$network")))
+  done < <(tier2_plan)
   ((TIER2_WARM_UP_S > 0)) && tier2_runs_system apple-hp && planned_s=$((planned_s + TIER2_WARM_UP_S - TIER2_DURATION))
   ((planned_s <= tier2_plan_budget_s)) || {
     echo "$runs runs (${planned_s}s with overhead) don't fit the ${tier2_plan_budget_s}s budget" >&2
     return 1
   }
+}
+
+tier2_run_overhead() {
+  if [[ "$1" == N7 ]]; then
+    echo $((tier2_run_overhead_s + tier2_ready_limit_s))
+  else
+    echo "$tier2_run_overhead_s"
+  fi
 }
 
 tier2_runs_input() {

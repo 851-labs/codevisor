@@ -38,6 +38,7 @@ struct Sim {
     sent_to_viewer: Vec<(Instant, Bytes)>,
     original_arrivals: std::collections::HashMap<(u8, u32, u16), Option<Instant>>,
     nacks_to_host: Vec<(Instant, wire::Nack)>,
+    stale_rtt: Option<Duration>,
 }
 
 impl Sim {
@@ -65,6 +66,7 @@ impl Sim {
             sent_to_viewer: Vec::new(),
             original_arrivals: std::collections::HashMap::new(),
             nacks_to_host: Vec::new(),
+            stale_rtt: None,
         }
     }
 
@@ -113,7 +115,7 @@ impl Sim {
                 }
             }
         }
-        let rtt = self.delays[0] + self.delays[1];
+        let rtt = self.stale_rtt.unwrap_or(self.delays[0] + self.delays[1]);
         self.host.set_rtt(rtt);
         self.viewer.set_rtt(rtt);
         while let Some(event) = self.host.poll_event() {
@@ -1177,4 +1179,380 @@ fn a_stream_too_small_to_time_leaves_the_estimate_unmeasured_until_a_frame_is() 
     assert!(!guessed.sampled, "{:.1} Mbit/s from 400-byte frames", guessed.estimate_bps / 1e6);
     assert!(sampled.sampled);
     assert!(sampled.estimate_bps < 45e6, "{:.1} Mbit/s on a 30 Mbit/s link", sampled.estimate_bps / 1e6);
+}
+
+const SLOW_LINK: NetworkConditions =
+    NetworkConditions { id: "1 Mbit/s", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
+
+fn first_keyframe_on_a_slow_link(lost_once: std::ops::Range<u16>) -> (Sim, Bytes) {
+    first_keyframes_on_a_slow_link(lost_once, 1)
+}
+
+fn first_keyframes_on_a_slow_link(lost_once: std::ops::Range<u16>, tiles: u8) -> (Sim, Bytes) {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(first_time(move |direction, datagram| {
+        direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| {
+                header.stream == 0 && header.kind == Kind::Data && lost_once.contains(&header.index)
+            })
+    }));
+    let data = payload(1, 190_000);
+    for tile in 0..tiles {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    sim.run_for(Duration::from_secs(12));
+    (sim, data)
+}
+
+fn lost_on_the_host(sim: &Sim) -> usize {
+    sim.host_events.iter().filter(|event| matches!(event, Event::FrameLost { .. })).count()
+}
+
+#[test]
+fn a_frame_still_crossing_a_slow_link_isnt_declared_lost_while_the_viewer_hasnt_seen_it() {
+    let (sim, data) = first_keyframe_on_a_slow_link(0..150);
+
+    assert_eq!(lost_on_the_host(&sim), 0, "the host gave up while the frame's tail was still in the link's queue");
+    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(data));
+}
+
+#[test]
+fn a_frame_the_viewer_is_still_asking_for_is_given_up_by_neither_end() {
+    let (sim, data) = first_keyframe_on_a_slow_link(20..150);
+    let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+
+    assert_eq!(lost_on_the_host(&sim), 0, "the host or the viewer gave up while the resends were on their way");
+    assert_eq!(sim.frames().first().map(|frame| frame.data.clone()), Some(data));
+    assert_eq!(skipped, 0);
+}
+
+#[test]
+fn a_frame_whose_resends_wait_behind_another_tile_isnt_given_up_by_the_viewer() {
+    let (sim, data) = first_keyframes_on_a_slow_link(20..150, 2);
+    let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+    let delivered: Vec<u8> = sim.frames().iter().filter(|frame| frame.data == data).map(|frame| frame.stream).collect();
+
+    assert_eq!(skipped, 0, "the viewer gave up the first tile while its resends waited behind the second");
+    assert_eq!(lost_on_the_host(&sim), 0);
+    assert_eq!(delivered.len(), 2);
+}
+
+#[test]
+fn a_packet_asked_for_again_while_its_resend_is_still_queued_on_the_link_isnt_sent_every_round_trip() {
+    let (mut sim, _) = first_keyframes_on_a_slow_link(20..150, 2);
+    let resent = sim.host.stats(sim.now).packets_retransmitted;
+
+    assert!(resent <= 195, "{resent} packets resent for 130 that were lost");
+}
+
+fn resent_for_two_tiles_on_a_slow_link(stale_rtt: Duration, lost_once: impl Fn(u16) -> bool + 'static) -> (u64, usize) {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(stale_rtt);
+    sim.drop_when(lost_times(move |header| u32::from(header.stream == 0 && lost_once(header.index))));
+    let data = payload(1, 190_000);
+    for tile in 0..2 {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    sim.run_for(Duration::from_secs(12));
+    let delivered = sim.frames().iter().filter(|frame| frame.data == data).count();
+    (sim.host.stats(sim.now).packets_retransmitted, delivered)
+}
+
+#[test]
+fn two_bursts_of_loss_reported_together_dont_make_the_link_look_faster() {
+    let (resent, delivered) =
+        resent_for_two_tiles_on_a_slow_link(100 * MS, |index| (3..40).contains(&index) || (90..150).contains(&index));
+
+    assert_eq!(delivered, 2);
+    assert!(resent <= 146, "{resent} packets resent for 97 that were lost");
+}
+
+#[test]
+fn a_round_trip_figure_above_the_real_one_doesnt_bring_the_repeats_back() {
+    let (resent, delivered) = resent_for_two_tiles_on_a_slow_link(160 * MS, |index| (20..150).contains(&index));
+
+    assert_eq!(delivered, 2);
+    assert!(resent <= 195, "{resent} packets resent for 130 that were lost");
+}
+
+#[test]
+fn a_request_that_names_a_packet_many_times_counts_it_once() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(lost_times(|header| u32::from(header.index < 10)));
+    let data = payload(1, 60_000);
+    sim.send(frame(0, &data));
+    sim.run_for(40 * MS);
+    let repeated = wire::Nack { stream: 0, frame: 0, ranges: vec![(0, 10); 64] };
+    sim.host.handle_datagram(sim.now, repeated.encode());
+    let resent = sim.host.stats(sim.now).packets_retransmitted;
+    let waited = delivered_after(&mut sim, &data, 1, Duration::from_secs(6));
+
+    assert_eq!(resent, 10, "ten packets were named, 64 times each");
+    assert!(waited.is_some(), "the frame never arrived");
+    assert_eq!(lost_on_the_host(&sim), 0);
+}
+
+#[test]
+fn a_frame_with_one_packet_through_isnt_waited_for_as_if_the_rest_were_on_their_way() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.send(frame(1, &payload(1, 12_000)));
+    sim.run_for(Duration::from_secs(1));
+    sim.drop_when(|direction, datagram| match direction {
+        Direction::ToViewer => {
+            PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.stream == 0 && header.index > 0)
+        }
+        Direction::ToHost => false,
+    });
+    sim.send(frame(0, &payload(2, 180_000)));
+    let mut skipped_after = None;
+    for step in 1..=300u32 {
+        sim.run_for(10 * MS);
+        if skipped(&sim, 0, 0) {
+            skipped_after = Some(10 * MS * step);
+            break;
+        }
+    }
+
+    let waited = skipped_after.expect("the frame was never given up");
+    assert!(waited <= 600 * MS, "given up only after {waited:?} with one packet of 150 through");
+}
+
+#[test]
+fn a_frame_that_never_arrives_on_a_slow_link_is_still_declared_lost() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(|direction, _| direction == Direction::ToViewer);
+    sim.send(frame(0, &payload(1, 190_000)));
+    sim.run_for(Duration::from_secs(12));
+
+    assert_eq!(lost_on_the_host(&sim), 1);
+}
+
+fn is_data(datagram: &Bytes, stream: u8, frame: u32, index: u16) -> bool {
+    PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| {
+        header.kind == Kind::Data && (header.stream, header.frame, header.index) == (stream, frame, index)
+    })
+}
+
+fn skipped(sim: &Sim, stream: u8, frame: u32) -> bool {
+    sim.viewer_events.contains(&Event::FrameSkipped { stream, frame })
+}
+
+#[test]
+fn a_packet_that_never_gets_through_still_ends_in_a_lost_frame() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, 0, 5));
+    sim.send(frame(0, &payload(1, 30_000)));
+    sim.run_for(Duration::from_secs(30));
+
+    assert_eq!(lost_on_the_host(&sim), 1, "both ends kept retrying a frame that can't complete");
+    assert!(skipped(&sim, 0, 0));
+}
+
+const BUSY_FAST_LINK: NetworkConditions =
+    NetworkConditions { id: "50 Mbit/s", delay_ms: 25.0, capacity_kbps: Some(50_000), ..NetworkConditions::N0 };
+
+fn viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video() -> (Duration, Duration) {
+    const LOST: u32 = 30;
+    let mut sim = Sim::new(BUSY_FAST_LINK, config(FecMode::Off), 1);
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_data(datagram, 0, LOST, 1));
+    let give_up = codevisor_media::give_up_after(sim.host.stats(sim.now).rtt, INTERVAL);
+    let mut skipped_at = None;
+    for index in 0..90u64 {
+        for tile in 0..4 {
+            sim.send(frame(tile, &payload(index * 4 + u64::from(tile), 20_000)));
+        }
+        let next = sim.now + INTERVAL;
+        while sim.now < next {
+            sim.run_for(MS.min(next - sim.now));
+            if skipped_at.is_none() && skipped(&sim, 0, LOST) {
+                skipped_at = Some(sim.now);
+            }
+        }
+    }
+    let asked_at = sim
+        .nacks_to_host
+        .iter()
+        .find(|(_, nack)| (nack.stream, nack.frame) == (0, LOST))
+        .map(|(at, _)| *at)
+        .expect("the viewer never asked for the lost packet");
+    (skipped_at.expect("the frame was never given up") - asked_at, give_up)
+}
+
+#[test]
+fn a_lost_frame_isnt_held_while_other_tiles_video_arrives_with_gaps_between_frames() {
+    let (waited, give_up) = viewer_wait_for_a_packet_that_never_arrives_among_four_tiles_of_video();
+
+    assert!(waited <= give_up + INTERVAL, "given up {waited:?} after the request, against a give-up time of {give_up:?}");
+}
+
+fn lost_times(times: impl Fn(PacketHeader) -> u32 + 'static) -> impl FnMut(Direction, &Bytes) -> bool {
+    let mut dropped = std::collections::HashMap::new();
+    move |direction, datagram| {
+        direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| {
+                let seen = dropped.entry((header.stream, header.frame, header.index)).or_insert(0);
+                let drop = header.kind == Kind::Data && *seen < times(header);
+                *seen += u32::from(drop);
+                drop
+            })
+    }
+}
+
+fn delivered_after(sim: &mut Sim, data: &Bytes, copies: usize, limit: Duration) -> Option<Duration> {
+    let start = sim.now;
+    while sim.now < start + limit {
+        sim.run_for(MS);
+        if sim.frames().iter().filter(|frame| frame.data == *data).count() >= copies {
+            return Some(sim.now - start);
+        }
+    }
+    None
+}
+
+#[test]
+fn a_packet_whose_resend_is_lost_too_on_a_fast_link_is_sent_again_at_the_viewers_next_requests() {
+    for (first_frame, len, lost, network) in [
+        (false, 30_000, 5, NetworkConditions::N1),
+        (true, 500_000, 5, NetworkConditions::N1),
+        (false, 150_000, 40, NetworkConditions::N1),
+        (false, 150_000, 40, NetworkConditions::N3),
+    ] {
+        let delivery = |drops: u32| {
+            let mut sim = Sim::new(network, config(FecMode::Off), 1);
+            let mut number = 0;
+            if !first_frame {
+                for index in 0..60 {
+                    number = sim.send(frame(0, &payload(index + 2, 3_000))) + 1;
+                    sim.run_for(INTERVAL);
+                }
+                sim.run_for(Duration::from_secs(2));
+            }
+            sim.drop_when(lost_times(move |header| if (header.frame, header.index) == (number, lost) { drops } else { 0 }));
+            let data = payload(1, len);
+            sim.send(frame(0, &data));
+            let waited = delivered_after(&mut sim, &data, 1, Duration::from_secs(6));
+            (waited, lost_on_the_host(&sim), sim.host.stats(sim.now).rtt)
+        };
+        let (once, ..) = delivery(1);
+        let (twice, host_lost, rtt) = delivery(2);
+
+        assert_eq!(host_lost, 0, "the host gave the frame up");
+        let (once, twice) = (once.expect("the frame arrives"), twice.expect("the frame never arrived"));
+        assert!(twice <= once + 2 * (rtt + MS), "{}: {twice:?} with the resend lost, {once:?} without", network.id);
+    }
+}
+
+#[test]
+fn a_resend_lost_behind_a_slow_links_queue_is_sent_again_once_the_queue_has_passed_it() {
+    let delivery = |drops_of_first: u32| {
+        let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+        sim.stale_rtt = Some(100 * MS);
+        sim.drop_when(lost_times(move |header| match (header.stream, header.index) {
+            (0, 20) => drops_of_first,
+            (0, 21..150) => 1,
+            _ => 0,
+        }));
+        let data = payload(1, 190_000);
+        for tile in 0..2 {
+            sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+        }
+        let waited = delivered_after(&mut sim, &data, 2, Duration::from_secs(12));
+        (waited, lost_on_the_host(&sim), sim.host.stats(sim.now).packets_retransmitted)
+    };
+    let (once, ..) = delivery(1);
+    let (twice, lost, resent) = delivery(2);
+
+    assert_eq!(lost, 0, "the host gave the frame up");
+    let (once, twice) = (once.expect("both tiles arrive"), twice.expect("a tile never arrived"));
+    assert!(twice <= once + 500 * MS, "{twice:?} with one resend lost, {once:?} without");
+    assert!(resent <= 195, "{resent} packets resent for 130 that were lost");
+}
+
+#[test]
+fn a_probe_for_a_frame_the_viewer_already_answered_doesnt_delay_the_next_tail_probe() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Off), 1);
+    sim.stale_rtt = Some(100 * MS);
+    let mut lost_once = lost_times(|header| u32::from(header.frame == 0 && (20..150).contains(&header.index)));
+    let mut acked = false;
+    sim.drop_when(move |direction, datagram| match direction {
+        Direction::ToViewer => lost_once(direction, datagram),
+        Direction::ToHost if is_kind(datagram, Kind::Feedback) && !acked => {
+            acked = true;
+            true
+        }
+        Direction::ToHost => false,
+    });
+    let keyframe = payload(1, 190_000);
+    sim.send(OutgoingFrame { keyframe: true, ..frame(0, &keyframe) });
+    delivered_after(&mut sim, &keyframe, 1, Duration::from_secs(12)).expect("the keyframe arrives");
+    sim.run_for(Duration::from_secs(1));
+    let probes_before = sim.host.stats(sim.now).probes_sent;
+    assert!(probes_before > 0, "the keyframe was never probed");
+
+    let mut first = true;
+    sim.drop_when(move |direction, datagram| {
+        let drop = direction == Direction::ToHost && is_kind(datagram, Kind::Feedback) && first;
+        first &= !drop;
+        drop
+    });
+    let number = sim.send(frame(0, &payload(2, 2_000)));
+    sim.run_for(Duration::from_secs(1));
+
+    let acked_after = sim.acks().iter().find(|ack| ack.frame == number).expect("the frame is acknowledged").acked_after;
+    assert!(acked_after < 250 * MS, "the lost acknowledgement was only asked for again after {acked_after:?}");
+}
+
+#[test]
+fn a_frame_missing_two_packets_isnt_given_up_while_its_resends_wait_behind_other_tiles() {
+    for tiles in [2, 3] {
+        let (sim, data) = first_keyframes_on_a_slow_link(20..22, tiles);
+        let skipped = sim.viewer_events.iter().filter(|event| matches!(event, Event::FrameSkipped { .. })).count();
+        let delivered = sim.frames().iter().filter(|frame| frame.data == data).count();
+
+        assert_eq!(skipped, 0, "{tiles} tiles: the viewer gave the first tile up with its resends still queued");
+        assert_eq!(lost_on_the_host(&sim), 0, "{tiles} tiles");
+        assert_eq!(delivered, usize::from(tiles), "{tiles} tiles");
+    }
+}
+
+#[test]
+fn a_resend_held_behind_a_slow_links_queue_keeps_its_frame_alive_while_the_viewer_asks_for_it() {
+    let mut sim = Sim::new(SLOW_LINK, config(FecMode::Adaptive), 1);
+    sim.stale_rtt = Some(Duration::from_millis(60));
+    sim.drop_when(lost_times(|header| match (header.stream, header.index) {
+        (0, 140) => 2,
+        (0, 20..150) => 1,
+        _ => 0,
+    }));
+    let data = payload(1, 190_000);
+    for tile in 0..4 {
+        sim.send(OutgoingFrame { keyframe: true, ..frame(tile, &data) });
+    }
+    let waited = delivered_after(&mut sim, &data, 4, Duration::from_secs(20));
+    let given_up_with_resends_held = sim.host_events.contains(&Event::FrameLost { stream: 0, frame: 0 });
+
+    assert!(waited.is_some(), "the four keyframes never arrived");
+    assert!(!given_up_with_resends_held, "the host gave a keyframe up while the viewer was still asking for its resends");
+}
+
+#[test]
+fn a_frame_whose_resend_waits_behind_another_tiles_keyframe_on_a_fast_link_isnt_given_up() {
+    let mut sim = Sim::new(BUSY_FAST_LINK, config(FecMode::Off), 1);
+    for index in 0..30u64 {
+        sim.send(frame(0, &payload(index, 3_000)));
+        sim.run_for(INTERVAL);
+    }
+    sim.drop_when(lost_times(|header| u32::from((header.stream, header.frame, header.index) == (0, 30, 1))));
+    let data = payload(99, 20_000);
+    sim.send(frame(0, &data));
+    sim.send(OutgoingFrame { keyframe: true, ..frame(1, &payload(100, 1_500_000)) });
+    let waited = delivered_after(&mut sim, &data, 1, Duration::from_secs(2));
+
+    assert!(!skipped(&sim, 0, 30), "the viewer gave the frame up while the keyframe ahead of its resend arrived");
+    assert!(waited.is_some());
 }

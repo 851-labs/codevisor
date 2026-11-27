@@ -1,3 +1,4 @@
+mod arrived;
 pub mod bench;
 mod core;
 mod estimator;

@@ -26,6 +26,18 @@ struct BenchLoopbackAnalysisTests {
     #expect(result.longGaps == nil, "nor long gaps: its gaps are the scene's own idle time")
   }
 
+  @Test func theFirstPictureIsTimedFromTheFirstVersionProducedWarmUpIncluded() {
+    let frames = Self.produced.dropFirst(3).map { Self.frame(sourceNs: $0.ns) }
+    let analysis = BenchLoopbackAnalysis(
+      produced: Self.produced, frames: Array(frames), windowNs: Self.window, cadence: Self.cadence,
+      endpoint: .committed)
+    var result = Self.result
+
+    analysis.apply(to: &result)
+
+    #expect(result.firstPictureMs == 321, "the fourth version, produced at 300 ms, is the first one shown")
+  }
+
   @Test func framesTheSourceNeverProducedAreNotLatencySamples() {
     let refresh = Self.frame(sourceNs: 450 * Self.ms, latencyMs: 500)
     let frames = [Self.frame(sourceNs: 400 * Self.ms), refresh]

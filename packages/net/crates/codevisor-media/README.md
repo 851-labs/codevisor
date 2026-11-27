@@ -42,6 +42,70 @@ no jitter buffer and no queue deeper than one frame.
      still arriving isn't lost: in Tier 1 (run 41701359340, N6 and N7) a keyframe of several hundred KB was given up
      while it arrived, and with no acknowledged reference the host answered with another keyframe, which went the same
      way (scroll N6: 11 frames sent in 40 s, all keyframes, all lost).
+     Neither end gives a frame up while it can still arrive (851-4477), within bounds. The viewer's wait for a frame
+     it has asked for is at least the time the frame's missing packets take at the pace its own first-time packets
+     came at (its patience, at most 5 s, `MAX_CROSSING`: a 190 KB keyframe at the 300 kbit/s floor); a frame with
+     fewer than two first-time packets has no pace and gets the plain give-up time. While media
+     packets of any frame keep arriving back to back (no gap longer than eight times the pace packets of one frame
+     have been arriving at, or than the tail wait, which follows the longest gap seen inside a frame), the wait doesn't run out either: a link delivering back to back has a
+     queue, and a resend waits behind whatever the host sent before the request. A link with gaps has nothing
+     queued ahead of the resend, so other traffic doesn't hold the frame: with 60 fps video on four tiles at
+     50 Mbit/s, counting any packet kept a packet that never arrived waiting 218 ms after its request in the sim,
+     against a 53 ms give-up time, with the stream's later frames held behind it; back to back it is 66 ms (the
+     tiles' frames take 13 ms to come through). Copies the viewer already has count too: the host's probes are
+     queued ahead of its resends, and with only new packets counted the sim's viewer gave a keyframe up during the
+     100 ms in which twelve probe copies arrived just before its 130 resends. That extra wait ends four times the
+     patience after the frame's last packet, or after the time 512 packets take at that pace if that is longer,
+     again at most 5 s; on 1 Mbit/s it is the 5 s, so a keyframe missing two packets is still there when their
+     resends come through behind two more tiles' keyframes (it was given up 0.5 s after its last packet). The host counts a NACK that names a packet it wasn't asked
+     for before as an answer: its probe count starts again and the frame gets the time everything then waiting needs
+     to cross. A repeat counts too when the host sends that packet again, or while it is holding
+     the packet's resend behind a deep queue (below): either way the viewer is still waiting for the frame. Without
+     the first, a frame whose repeats the host kept sending still used up its six probes while the viewer was
+     asking, and was given up; without the second, a frame on 1 Mbit/s with four keyframes in the queue
+     was given up by the host while its resends were on their way. A repeat the host skips because its resend left
+     under half a round trip ago doesn't count. A packet that never gets through still ends in a lost frame: the
+     viewer gives its frame up within its bounds above and says so. When the sixth unanswered probe goes out, the host fixes how long it still waits: until what was in
+     flight could have crossed at the rate the viewer acknowledged over the last 0.5 s (300 kbit/s with no
+     acknowledgement in that time, never over the estimate, at most 5 s), counted from the frame's last packet or
+     the viewer's last answer, whichever is later. Before, the viewer gave a frame up one
+     round trip after its last packet, and the host's probes were spaced by a round trip measured before the queue
+     built up: a 190 KB first keyframe on a 1 Mbit/s link was declared lost after 1.7 s, about when its last packets
+     arrived, and with no acknowledged reference the host answered with a second, larger keyframe (Tier 1 lab run
+     45764155233, scroll and video on N7: 417–455 KB and 1.25 MB). What discards the packets in the first place is
+     below this crate: the viewer's QUIC logs "failed to authenticate packet" and "discarding possible duplicate
+     packet" for them while the connection has more than one path.
+     The host also stops answering a repeated request while its last resend of that packet is still behind a deep
+     queue (851-4477). It used to resend whenever the last one had left more than half a round trip ago, and the
+     viewer repeats a request every round trip, both read from QUIC, whose figure stays at the path's delay while a
+     slow link's queue holds seconds: one keyframe's 130 missing packets were resent 1,268 times in the sim, and the
+     longer waits above would only add to that. The host now gives everything it sends a place in one byte count and
+     follows how far into it the viewer has got (`Arrived`). A sighting is a request that names a packet for the
+     first time right after one it never asked for (that one arrived), or a completed frame; a packet the viewer
+     asked for before the host had sent it was a guess and is never taken as arrived. Between sightings the reach
+     moves on at the rate they advanced over the last 0.5 s, or at the estimate once the link has been measured if
+     that is higher. A packet still asked for after a sighting has passed it is lost and took no link time, so it
+     comes off what that sighting carried and a burst of loss doesn't make the link look faster; one asked for
+     ahead of the reach may only be late and counts for nothing. Sightings under 5 ms apart give no rate, and
+     neither does the first one after an idle spell, which starts the count again one lowest round trip after the
+     frame's first packet left (or at the first sighting, if that comes sooner). An idle spell is one where no frame
+     is in flight and, once the link has been measured, the reach has passed everything sent. With nothing in flight
+     but the reach still short (fresh resends, trailing parity, or a given-up frame's packets still queued), the
+     count carries on with what it has seen and what is known lost. Before the link is measured it starts again
+     regardless: sightings across app-limited gaps understate the rate, so their reach always looks short. A resend that leaves with more
+     than four round trips' worth of queue ahead of it (four frame intervals if that is longer) isn't sent again
+     until the reach has passed it, at most 5 s; a request that still names it then means it was lost, and it goes
+     out at once. Every other resend keeps the half-round-trip rule, and so does every resend while there is no
+     rate: there a second copy costs little and repairs a resend that was itself lost a round trip sooner. So a
+     wrong rate costs either some of the old repeats (too high, which is the side the loss count errs on: losses
+     that parity made up for are never asked for again and stay uncounted) or a later repair of a resend that was
+     lost (too low), never a packet that isn't sent. In the sim the keyframe above now has its 130 packets resent
+     175 times. Steady streams on N7 never have that much queued, so nothing changes there (32 seeds of 20 s, and 16
+     tiles for 40 s: the same frames and estimates as with the old rule, where holding every resend, deep or not,
+     cost about 1% of the frames), and a packet lost twice on a fast link is repaired at the viewer's next request
+     as before (7 ms on N1). A probe is not a resend the viewer asked for: the viewer's first request for a probed
+     packet counts as an answer and as a loss, once, whether or not the probe's copy makes another one unnecessary,
+     and a probe for a frame the viewer has already answered doesn't back the next frame's tail probe off.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
      that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
