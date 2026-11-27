@@ -3,11 +3,15 @@ import Foundation
 @MainActor
 public enum AgentChatTabs {
   public static func listedTabIds(of workspace: Workspace, sessions: ProjectListModel) -> [UUID] {
-    workspace.sideTabs.filter { isListed($0, in: workspace, sessions: sessions) }.map(\.id)
+    workspace.sideTabs
+      .filter { isListed($0, in: workspace, openTabId: workspace.selectedCenterTabId, sessions: sessions) }
+      .map(\.id)
   }
 
-  public static func isListed(_ tab: WorkspaceTab, in workspace: Workspace, sessions: ProjectListModel) -> Bool {
-    tab.id == workspace.selectedCenterTabId || !holdsOnlyAgentChats(tab, in: workspace, sessions: sessions)
+  public static func isListed(
+    _ tab: WorkspaceTab, in workspace: Workspace, openTabId: UUID?, sessions: ProjectListModel
+  ) -> Bool {
+    tab.id == openTabId || !holdsOnlyAgentChats(tab, in: workspace, sessions: sessions)
   }
 
   private static func holdsOnlyAgentChats(
