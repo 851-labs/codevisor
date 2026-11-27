@@ -7,6 +7,7 @@ import VideoToolbox
 
 struct ScreenSharingVCPEncoderStateTests {
   private static let repeatedSkips = 5
+  private static let twoFramesNs = 2 * 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
 
   @Test func aSkippedPictureTheSessionNeverEncodedIsAlwaysADrop() throws {
     var state = ScreenSharingVCPEncoderState()
@@ -48,6 +49,32 @@ struct ScreenSharingVCPEncoderStateTests {
     let second = try state.begin(request, refresh: nil, atNs: 1_001)
 
     #expect(second.presentationNs - first.presentationNs == ScreenSharingVCPRate.shortestFrameGapNs)
+  }
+
+  @Test func aFrameThatWaitedIsPresentedOneContentIntervalAfterThePreviousOneNotTheWholeWait() throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+    let request = try Self.request()
+    let changedEveryFrame = try Self.request(contentIntervalsNs: [0: frameNs])
+
+    let first = try state.begin(request, refresh: nil, atNs: 1_000)
+    let late = try state.begin(changedEveryFrame, refresh: nil, atNs: 1_000 + 15 * frameNs)
+    let unknown = try state.begin(request, refresh: nil, atNs: 1_000 + 30 * frameNs)
+
+    #expect(late.presentationNs - first.presentationNs == frameNs)
+    #expect(unknown.presentationNs - late.presentationNs == Self.twoFramesNs)
+  }
+
+  @Test(arguments: [ScreenSharingTileRefresh.keyframe, .longTermReference])
+  func aRefreshThatWaitedGetsTwoFrameIntervalsWhateverItsContentInterval(refresh: ScreenSharingTileRefresh) throws {
+    var state = ScreenSharingVCPEncoderState()
+    let frameNs = 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)
+    let changedEveryFrame = try Self.request(contentIntervalsNs: [0: frameNs])
+
+    let first = try state.begin(changedEveryFrame, refresh: nil, atNs: 1_000)
+    let refreshed = try state.begin(changedEveryFrame, refresh: refresh, atNs: 1_000 + 15 * frameNs)
+
+    #expect(refreshed.presentationNs - first.presentationNs == Self.twoFramesNs)
   }
 
   @Test func aSmallChangeRightAfterASharpeningPassKeepsTheCapTheSessionHas() throws {
@@ -131,12 +158,13 @@ struct ScreenSharingVCPEncoderStateTests {
   }
 
   private static func request(
-    refinement: Bool = false, small: Set<Int> = []
+    refinement: Bool = false, small: Set<Int> = [], contentIntervalsNs: [Int: Int64] = [:]
   ) throws -> ScreenSharingTileEncodeRequest {
     let frame = try TestBGRAPixels.frame(width: 64, height: 64, shades: [10], timestampNs: 1)
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: frame.pixelBuffer, sourceTimestampNs: 1, capturedNs: 1,
-      update: ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement), smallTiles: small)
+      update: ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement), smallTiles: small,
+      contentIntervalsNs: contentIntervalsNs)
   }
 
   private static func output(

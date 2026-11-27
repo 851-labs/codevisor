@@ -27,6 +27,7 @@ struct ScreenSharingV2CaptureSlot {
     waitingTiles = []
     smallTiles = []
     lastEncoded = capture
+    lastEncoded?.contentIntervalsNs = [:]
   }
 
   mutating func requeue(tiles: Set<Int>, repeated: Set<Int> = []) {

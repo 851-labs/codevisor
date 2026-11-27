@@ -1,5 +1,6 @@
 import CodevisorTestSupport
 import CoreVideo
+import Synchronization
 import Testing
 import VideoToolbox
 
@@ -152,6 +153,33 @@ extension HardwareCodecTests {
     }
 
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
+    func aFrameThatWaitedForContentChangingEveryFrameGetsAFewFrameIntervalsOfBitsNotTheWholeWait() async throws {
+      try await HardwareEncoderBudget.require(vcpTiles: 1)
+      let encoder = try Self.vcp(tiles: 1, metrics: ScreenSharingMetrics())
+      defer { encoder.stop() }
+      try encoder.setBitrate(Self.fadingBitrate)
+      let sizes = Mutex<[Int]>([])
+      let answered = TestSignal()
+      encoder.onOutput { output in
+        if case .tile(let tile) = output { sizes.withLock { $0.append(tile.accessUnit.count) } }
+        answered.signal()
+      }
+      let startNs = ScreenSharingMetrics.nowNs
+
+      for frame in 1...Self.fadingFrames {
+        try encoder.encode(try Self.fading(frame, elapsedNs: ScreenSharingMetrics.nowNs - startNs))
+        await answered.cancellableWait(for: frame)
+        try await Task.sleep(for: .nanoseconds(Self.longGapNs))
+      }
+
+      let encoded = sizes.withLock { $0 }
+      try #require(encoded.count > Self.settlingFrames, "only \(encoded.count) frames encoded")
+      let farApart = Self.median(encoded.dropFirst(Self.settlingFrames))
+      let interval = Self.fadingBitrate / 8 / ScreenSharingV2Profile.framesPerSecond
+      #expect(farApart <= Self.allowedIntervals * interval, "\(farApart) bytes a frame, \(interval) a frame interval")
+    }
+
+    @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
     func aFailureMidSessionFallsBackToVideoToolboxWithAKeyframeOnEveryTile() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
@@ -192,6 +220,30 @@ extension HardwareCodecTests {
       host.push(try TestBGRAPixels.frame(shades: [60], timestampNs: 1_000))
       await transport.sends.cancellableWait(for: 1)
       return try #require(transport.sent.first)
+    }
+
+    private static let fadingBitrate = 8_000_000
+    private static let fadingFrames = 10
+    private static let settlingFrames = 2
+    private static let allowedIntervals = 3
+    private static let longGapNs: UInt64 = 250_000_000
+
+    private static func fading(_ frame: Int, elapsedNs: Int64) throws -> ScreenSharingTileEncodeRequest {
+      let picture = try TestBGRAPixels.frame(shades: [100], timestampNs: Int64(frame) * 1_000)
+      let phase = Double(elapsedNs % 4_000_000_000) / 4_000_000_000
+      TestBGRAPixels.paint(picture.pixelBuffer, rows: 0..<360, columns: 0..<640) { row, column in
+        let from = Double(TestBGRAPixels.noiseShade(row: row / 2, column: column / 2))
+        let to = Double(TestBGRAPixels.noiseShade(row: row / 2 + 7_919, column: column / 2))
+        return UInt8(from + (to - from) * phase)
+      }
+      return ScreenSharingTileEncodeRequest(
+        pixelBuffer: picture.pixelBuffer, sourceTimestampNs: Int64(frame) * 1_000, capturedNs: Int64(frame) * 1_000,
+        update: ScreenSharingTileUpdate(id: UInt32(frame), tiles: [0]),
+        contentIntervalsNs: [0: 1_000_000_000 / Int64(ScreenSharingV2Profile.framesPerSecond)])
+    }
+
+    private static func median(_ values: some Collection<Int>) -> Int {
+      values.sorted()[values.count / 2]
     }
 
     private static func configuration() throws -> ScreenSharingVideoConfiguration {

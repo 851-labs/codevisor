@@ -23,7 +23,9 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     height = factory.height
     self.metrics = metrics
     self.relay = relay
-    state = Mutex(ScreenSharingVCPEncoderState(tile: tile, rate: factory.rate))
+    let clock = ScreenSharingEncoderPresentationClock(
+      framesPerSecond: factory.framesPerSecond, shortestGapNs: ScreenSharingVCPRate.shortestFrameGapNs)
+    state = Mutex(ScreenSharingVCPEncoderState(tile: tile, rate: factory.rate, clock: clock))
     session = try factory.make()
     session.sink.onOutput { [weak self] output in self?.didEncode(output) }
   }

@@ -9,10 +9,11 @@ struct ScreenSharingVCPEncoderState {
   var tile = 0
   var highestQP = ScreenSharingVCPRate.highestFrameQP
   var rate = ScreenSharingVCPRate(bitsPerSecond: ScreenSharingV2Profile.bitrateCeiling, tiles: 1)
+  var clock = ScreenSharingEncoderPresentationClock(
+    framesPerSecond: ScreenSharingV2Profile.framesPerSecond, shortestGapNs: ScreenSharingVCPRate.shortestFrameGapNs)
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
   private var lastEncodedCapture: Int64?
   private var nextSubmission: UInt64 = 0
-  private var lastPresentationNs: Int64 = 0
   private var sharpenedLast = false
 
   mutating func begin(
@@ -24,10 +25,11 @@ struct ScreenSharingVCPEncoderState {
     if let failure { throw ScreenSharingError.unavailable("VCP failed: \(failure)") }
 
     nextSubmission += 1
-    lastPresentationNs = max(lastPresentationNs + ScreenSharingVCPRate.shortestFrameGapNs, nowNs)
+    let contentIntervalNs = refresh == nil ? request.contentIntervalsNs[tile] : nil
+    let presentationNs = clock.presentationNs(submittedAtNs: nowNs, contentIntervalNs: contentIntervalNs)
     let submission = ScreenSharingVCPSubmission(
       id: nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
-      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: lastPresentationNs,
+      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: presentationNs,
       highestQP: highestQP(for: request, refresh: refresh), repeatsCapture: request.repeatedTiles.contains(tile))
     sharpenedLast = request.update.isRefinement
     inFlight[submission.id] = submission
