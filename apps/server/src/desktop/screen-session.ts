@@ -29,9 +29,14 @@ export const ownGraphicalSession = (
   return found.find((session) => session?.env["DBUS_SESSION_BUS_ADDRESS"] !== undefined) ?? found[0]
 }
 
+export interface AtTheScreen {
+  readonly account: string
+  readonly type?: string
+}
+
 export const accountsAtTheScreen = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string> | undefined> => {
+): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
   const seated = await seatedAccounts(system)
   if (seated !== undefined) return seated
 
@@ -108,7 +113,7 @@ const environmentOf = (text: string | undefined): Readonly<Record<string, string
 
 const seatedAccounts = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string> | undefined> => {
+): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
   const listed = await system.run("loginctl", ["list-sessions", "--no-legend"])
   if (listed.code !== 0) return undefined
 
@@ -117,13 +122,13 @@ const seatedAccounts = async (
     .map((line) => line.trim().split(/\s+/)[0] ?? "")
     .filter((id) => id !== "")
   const accounts = await Promise.all(ids.map((id) => seatedAccountOf(system, id)))
-  return unique(accounts.filter((account) => account !== undefined))
+  return uniqueAccounts(accounts.filter((account) => account !== undefined))
 }
 
 const seatedAccountOf = async (
   system: Pick<DesktopSystem, "run">,
   session: string
-): Promise<string | undefined> => {
+): Promise<AtTheScreen | undefined> => {
   const shown = await system.run("loginctl", [
     "show-session",
     session,
@@ -136,7 +141,9 @@ const seatedAccountOf = async (
     "-p",
     "Remote",
     "-p",
-    "State"
+    "State",
+    "-p",
+    "Type"
   ])
   const fields = new Map(
     shown.output.split("\n").map((line) => {
@@ -150,16 +157,20 @@ const seatedAccountOf = async (
     fields.get("Class") === "user" &&
     fields.get("Remote") !== "yes" &&
     fields.get("State") !== "closing"
-  return isAtTheScreen ? fields.get("Name") : undefined
+  const account = fields.get("Name") ?? ""
+  if (!isAtTheScreen || account === "") return undefined
+
+  const type = fields.get("Type") ?? ""
+  return type === "" ? { account } : { account, type }
 }
 
 const loggedInOnADisplay = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string> | undefined> => {
+): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
   const listed = await system.run("who", [])
   if (listed.code !== 0) return undefined
 
-  return unique(
+  const accounts = unique(
     listed.output
       .split("\n")
       .map((line) => line.trim().split(/\s+/))
@@ -167,6 +178,10 @@ const loggedInOnADisplay = async (
       .map((fields) => fields[0] ?? "")
       .filter((account) => account !== "" && !greeters.has(account))
   )
+  return accounts.map((account) => ({ account }))
 }
 
 const unique = (names: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(names)]
+
+const uniqueAccounts = (found: ReadonlyArray<AtTheScreen>): ReadonlyArray<AtTheScreen> =>
+  found.filter((entry, at) => found.findIndex((other) => other.account === entry.account) === at)

@@ -27,6 +27,7 @@ export interface FakeMachine {
   readonly spawned: Array<{ command: string; args: ReadonlyArray<string>; logPath: string }>
   readonly terminated: number[]
   readonly killed: number[]
+  readonly programs: Set<string>
   readonly madePrivate: string[]
   readonly closedToOthers: string[]
   readonly changes: { count: number }
@@ -185,6 +186,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     spawned,
     terminated,
     killed,
+    programs,
     madePrivate,
     closedToOthers,
     changes,

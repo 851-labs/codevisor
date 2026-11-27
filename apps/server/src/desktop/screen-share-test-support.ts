@@ -34,11 +34,11 @@ export const aliceAtTheMonitor = {
   DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1001/bus"
 }
 
-const seated = (account: string) => ({
+export const seated = (account: string, type = "x11") => ({
   "loginctl list-sessions --no-legend": { code: 0, output: ` 2 1002 ${account} seat0 tty2\n` },
-  "loginctl show-session 2 -p Name -p Seat -p Class -p Remote -p State": {
+  "loginctl show-session 2 -p Name -p Seat -p Class -p Remote -p State -p Type": {
     code: 0,
-    output: `Name=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\n`
+    output: `Name=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\nType=${type}\n`
   }
 })
 export const someoneElseIsSeated = seated("alice")
@@ -71,10 +71,13 @@ export const workstation = (scene: Scene = {}) => {
       return machine.system.spawnDetached(command, args, logPath)
     }
   }
-  const logIn = (env: Record<string, string> = aliceAtTheMonitor): void => {
+  const logIn = (
+    env: Record<string, string> = aliceAtTheMonitor,
+    type = env["WAYLAND_DISPLAY"] === undefined ? "x11" : "wayland"
+  ): void => {
     machine.files.set(`/proc/${sessionProcess}/status`, "Uid:\t1001\t1001\n")
     machine.files.set(`/proc/${sessionProcess}/environ`, environ(env))
-    Object.assign(logind, seated("codevisor"))
+    Object.assign(logind, seated("codevisor", type))
   }
   const leaveTheScreen = (): void => void Object.assign(logind, nobodyIsSeated)
   const endTheSession = (): void => {

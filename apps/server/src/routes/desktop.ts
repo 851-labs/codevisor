@@ -47,7 +47,8 @@ export const routeDesktop = async (route: RouteContext): Promise<boolean> => {
   const desktops = { desktop: config.desktop, screen: config.screen }
   response.setHeader("Cache-Control", "no-store")
   try {
-    writeJson(response, 200, await withTheScreen(desktops, await action(desktops, url)))
+    const askSudo = url.searchParams.get("screen") === "1"
+    writeJson(response, 200, await withTheScreen(desktops, await action(desktops, url), askSudo))
   } finally {
     if (changesWhatIsShared.has(endpoint)) announceFeatures(route)
   }
@@ -67,11 +68,12 @@ const afterTheScreen = async (
 
 const withTheScreen = async (
   { screen }: Desktops,
-  status: DesktopStatus
+  status: DesktopStatus,
+  askSudo: boolean
 ): Promise<DesktopStatus> => {
   if (screen === undefined) return status
 
-  return { ...status, screen: await screen.status() }
+  return { ...status, screen: await screen.status({ askSudo }) }
 }
 
 const announceFeatures = ({ services, fanout }: RouteContext): void => {

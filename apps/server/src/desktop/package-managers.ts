@@ -107,16 +107,22 @@ const dnfLog = "/var/log/dnf5.log"
 const dnfUntilTheRpmLockIsFree = `for try in $(seq ${tries}); do seen=$(cat ${dnfLog} 2>/dev/null | wc -l); dnf install -y --setopt=install_weak_deps=False "$@" && exit 0; tail -n +"$((seen + 1))" ${dnfLog} 2>/dev/null | grep -q "transaction lock" || exit 1; echo "Something else is installing packages. ${again}"; sleep ${retrySeconds}; done; exit 1`
 
 const pacmanLock = "/var/lib/pacman/db.lck"
-const pacmanListsAreOld =
-  "If packages were not found, the package lists here are old. Run pacman -Syu, then set the desktop up again."
-const pacmanLockWasLeftBehind = `${pacmanLock} exists but no pacman is running. If another package manager is at work, set the desktop up again when it is done. Otherwise the lock was left behind: remove it, then set the desktop up again.`
-const pacmanUntilItsLockIsFree = `for try in $(seq ${tries}); do { ls /var/lib/pacman/sync/*.db >/dev/null 2>&1 || pacman -Sy --noconfirm; } && pacman -S --needed --noconfirm "$@" && exit 0; [ -e ${pacmanLock} ] || { echo "${pacmanListsAreOld}"; exit 1; }; grep -qsx pacman /proc/[0-9]*/comm || { echo "${pacmanLockWasLeftBehind}"; exit 1; }; echo "Another pacman is running. ${again}"; sleep ${retrySeconds}; done; exit 1`
+const setTheDesktopUpAgain = "set the desktop up again"
+const shareTheScreenAgain = "run codevisor desktop setup --screen again"
+const pacmanListsAreOld = (rerun: string): string =>
+  `If packages were not found, the package lists here are old. Run pacman -Syu, then ${rerun}.`
+const pacmanLockWasLeftBehind = (rerun: string): string =>
+  `${pacmanLock} exists but no pacman is running. If another package manager is at work, ${rerun} when it is done. Otherwise the lock was left behind: remove it, then ${rerun}.`
+const pacmanUntilItsLockIsFree = (rerun: string): string =>
+  `for try in $(seq ${tries}); do { ls /var/lib/pacman/sync/*.db >/dev/null 2>&1 || pacman -Sy --noconfirm; } && pacman -S --needed --noconfirm "$@" && exit 0; [ -e ${pacmanLock} ] || { echo "${pacmanListsAreOld(rerun)}"; exit 1; }; grep -qsx pacman /proc/[0-9]*/comm || { echo "${pacmanLockWasLeftBehind(rerun)}"; exit 1; }; echo "Another pacman is running. ${again}"; sleep ${retrySeconds}; done; exit 1`
 
 const zypperInstalledBut = "102|103|107"
 const zypperSkippedARepository = "106"
 const zypperSkippedAndFellShort =
   "zypper skipped a repository it could not refresh, so not everything was installed. Check the repositories with: zypper refresh"
-const zypperWithTheStockPanel = `rpm -q xfce4-panel-branding-openSUSE >/dev/null 2>&1 || set -- "$@" xfce4-panel-branding-upstream; env ZYPP_LOCK_TIMEOUT=${lockWaitSeconds} zypper --non-interactive --ignore-unknown install --no-recommends "$@"; code=$?; case $code in ${zypperInstalledBut}) exit 0 ;; ${zypperSkippedARepository}) for program in ${DESKTOP_PROGRAMS.join(" ")}; do command -v "$program" >/dev/null || { echo "${zypperSkippedAndFellShort}"; exit $code; }; done; exit 0 ;; esac; exit $code`
+const zypperGiving = (programs: ReadonlyArray<string>): string =>
+  `env ZYPP_LOCK_TIMEOUT=${lockWaitSeconds} zypper --non-interactive --ignore-unknown install --no-recommends "$@"; code=$?; case $code in ${zypperInstalledBut}) exit 0 ;; ${zypperSkippedARepository}) for program in ${programs.join(" ")}; do command -v "$program" >/dev/null || { echo "${zypperSkippedAndFellShort}"; exit $code; }; done; exit 0 ;; esac; exit $code`
+const zypperWithTheStockPanel = `rpm -q xfce4-panel-branding-openSUSE >/dev/null 2>&1 || set -- "$@" xfce4-panel-branding-upstream; ${zypperGiving(DESKTOP_PROGRAMS)}`
 
 const aptInstall = (packages: ReadonlyArray<string>): ReadonlyArray<RootCommand> => [
   [...aptQuietly, "sh", "-c", aptUpdateUntilTheListsLockIsFree],
@@ -131,15 +137,6 @@ const aptInstall = (packages: ReadonlyArray<string>): ReadonlyArray<RootCommand>
     "--no-install-recommends",
     ...packages
   ]
-]
-
-const zypperInstall = [
-  "env",
-  `ZYPP_LOCK_TIMEOUT=${lockWaitSeconds}`,
-  "zypper",
-  "--non-interactive",
-  "install",
-  "--no-recommends"
 ]
 
 export const packageFamilies: ReadonlyArray<PackageFamily> = [
@@ -165,8 +162,12 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     program: "pacman",
     megabytes: 980,
     serves: (release) => release.ids.includes("arch"),
-    commands: [["sh", "-c", pacmanUntilItsLockIsFree, "sh", ...pacmanPackages]],
-    screenCommands: [["sh", "-c", pacmanUntilItsLockIsFree, "sh", ...pacmanScreenPackages]]
+    commands: [
+      ["sh", "-c", pacmanUntilItsLockIsFree(setTheDesktopUpAgain), "sh", ...pacmanPackages]
+    ],
+    screenCommands: [
+      ["sh", "-c", pacmanUntilItsLockIsFree(shareTheScreenAgain), "sh", ...pacmanScreenPackages]
+    ]
   },
   {
     manager: "zypper",
@@ -174,6 +175,6 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 740,
     serves: (release) => release.ids.includes("opensuse"),
     commands: [["sh", "-c", zypperWithTheStockPanel, "sh", ...zypperPackages]],
-    screenCommands: [[...zypperInstall, ...zypperScreenPackages]]
+    screenCommands: [["sh", "-c", zypperGiving(SCREEN_PROGRAMS), "sh", ...zypperScreenPackages]]
   }
 ]

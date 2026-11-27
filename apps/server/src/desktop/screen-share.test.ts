@@ -152,7 +152,7 @@ describe("sharing the screen the server's account is logged in at", () => {
       status: 409,
       message: "The screen can't be shared until these are installed: x0vncserver, notify-send"
     })
-    expect(await machine.screen.status()).toMatchObject({
+    expect(await machine.screen.status({ askSudo: true })).toMatchObject({
       state: "none",
       missing: ["x0vncserver", "notify-send"],
       sudo: "passwordless"
@@ -214,7 +214,7 @@ describe("sharing the screen the server's account is logged in at", () => {
   })
 
   it("keeps sharing on the socket it recorded, wherever the server's runtime folder is now", async () => {
-    const recorded = "/home/codevisor/.codevisor/run/codevisor-screen.sock"
+    const recorded = "/home/codevisor/.codevisor/run/codevisor-screen-e494c633d5a9.sock"
     const entry = { ...screenEntry, vnc: { socket: recorded, name: "Screen" } }
     const machine = workstation({ files: { [CONFIG]: JSON.stringify({ displays: [entry] }) } })
     machine.logIn()
@@ -291,6 +291,61 @@ describe("sharing the screen the server's account is logged in at", () => {
     const probed = machine.asked.filter((line) => line.startsWith("sh -c command -v"))
     expect(listed).toHaveLength(2)
     expect(probed).toHaveLength(2)
+  })
+
+  it("goes by the session type logind reports, not by one process's variables", async () => {
+    const machine = workstation()
+    machine.logIn(aliceAtTheMonitor, "wayland")
+
+    expect(await refusal(machine.screen.setUp())).toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Wayland")
+    })
+  })
+
+  it("stops a helper it started on another socket than the one now recorded", async () => {
+    const elsewhere = "/home/codevisor/.codevisor/run/codevisor-screen-e494c633d5a9.sock"
+    const entry = { ...screenEntry, vnc: { socket: elsewhere, name: "Screen" } }
+    const machine = workstation({ files: { [CONFIG]: JSON.stringify({ displays: [entry] }) } })
+    machine.logIn()
+    await machine.screen.follow()
+
+    machine.files.set(CONFIG, JSON.stringify({ displays: [desktopEntry] }))
+    await machine.screen.follow()
+
+    expect(machine.terminated).toEqual([helper])
+    expect(machine.files.has(pidFile)).toBe(false)
+  })
+
+  it("waits before starting again a helper that stopped right after it started", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.system.terminate(helper)
+    await machine.screen.follow()
+    expect(machine.spawned).toHaveLength(1)
+    expect(await machine.screen.status()).toMatchObject({
+      state: "stopped",
+      problem: "x0vncserver stopped right after it started; see its log"
+    })
+
+    machine.clock.now += 30_000
+    await machine.screen.follow()
+    expect(machine.spawned).toHaveLength(2)
+  })
+
+  it.each([
+    ["can't be read", "{ not json"],
+    ["isn't an object", "[]"]
+  ])("leaves a config that %s alone, and says so", async (_name, text) => {
+    const machine = workstation({ files: { [CONFIG]: text } })
+    machine.logIn()
+
+    expect(await refusal(machine.screen.setUp())).toMatchObject({ status: 409 })
+    await machine.screen.remove()
+
+    expect(machine.files.get(CONFIG)).toBe(text)
   })
 
   it("stops sharing and forgets the screen when it is removed, keeping the desktop", async () => {

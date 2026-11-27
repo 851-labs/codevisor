@@ -28,7 +28,7 @@ const aptInstallForTheScreen = `${apt} install -y -q --no-install-recommends tig
 describe("codevisor desktop setup --screen", () => {
   it("shares the screen its account is logged in at", async () => {
     const machine = world({
-      [`GET ${url()}`]: answers(withScreen(loggedIn)),
+      [`GET ${url("?screen=1")}`]: answers(withScreen(loggedIn)),
       [`POST ${url("/screen")}`]: answers(shared)
     })
 
@@ -42,7 +42,7 @@ describe("codevisor desktop setup --screen", () => {
 
   it("sets it up for later when nobody is logged in", async () => {
     const machine = world({
-      [`GET ${url()}`]: answers(withScreen()),
+      [`GET ${url("?screen=1")}`]: answers(withScreen()),
       [`POST ${url("/screen")}`]: answers(withScreen({ state: "waiting" }))
     })
 
@@ -54,7 +54,9 @@ describe("codevisor desktop setup --screen", () => {
   })
 
   it("refuses in one sentence when someone else is at the screen, and asks the server for nothing", async () => {
-    const machine = world({ [`GET ${url()}`]: answers(withScreen({ others: ["alice"] })) })
+    const machine = world({
+      [`GET ${url("?screen=1")}`]: answers(withScreen({ others: ["alice"] }))
+    })
 
     expect(await screenSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([
@@ -67,14 +69,15 @@ describe("codevisor desktop setup --screen", () => {
     const toInstall = withScreen({ ...loggedIn, missing, sudo: "passwordless" })
     const installing = withScreen({ ...loggedIn, missing, busy: "Installing packages" })
     const machine = world({
-      [`GET ${url()}`]: answers(toInstall, installing, withScreen(loggedIn)),
+      [`GET ${url("?screen=1")}`]: answers(toInstall),
+      [`GET ${url()}`]: answers(installing, withScreen(loggedIn)),
       [`POST ${url("/screen/packages")}`]: answers(installing),
       [`POST ${url("/screen")}`]: answers(shared)
     })
 
     expect(await screenSetupCommand(machine.deps)).toBe(0)
     expect(machine.logs[2]).toBe("==> Installing x0vncserver and notify-send with apt")
-    expect(machine.httpCalls(`GET ${url()}`)).toBe(3)
+    expect(machine.httpCalls(`GET ${url()}`)).toBe(2)
     expect(machine.interactiveCalls).toEqual([])
   })
 
@@ -83,7 +86,7 @@ describe("codevisor desktop setup --screen", () => {
     const toInstall = { ...withScreen({ ...loggedIn, missing, sudo: "passwordless" }), ...earlier }
     const installed = { ...withScreen(loggedIn), ...earlier }
     const machine = world({
-      [`GET ${url()}`]: answers(toInstall),
+      [`GET ${url("?screen=1")}`]: answers(toInstall),
       [`POST ${url("/screen/packages")}`]: answers(installed),
       [`POST ${url("/screen")}`]: answers(shared)
     })
@@ -96,7 +99,9 @@ describe("codevisor desktop setup --screen", () => {
     const failure =
       "Installing packages failed:\nE: Unable to locate package tigervnc-scraping-server"
     const machine = world({
-      [`GET ${url()}`]: answers(withScreen({ ...loggedIn, missing, sudo: "passwordless" })),
+      [`GET ${url("?screen=1")}`]: answers(
+        withScreen({ ...loggedIn, missing, sudo: "passwordless" })
+      ),
       [`POST ${url("/screen/packages")}`]: answers(withScreen({ ...loggedIn, missing, failure }))
     })
 
@@ -110,7 +115,8 @@ describe("codevisor desktop setup --screen", () => {
   it("runs the install itself with sudo when the account needs a password, from its own package list", async () => {
     const needsPassword = withScreen({ ...loggedIn, missing, sudo: "password" })
     const machine = world({
-      [`GET ${url()}`]: answers(needsPassword, withScreen(loggedIn)),
+      [`GET ${url("?screen=1")}`]: answers(needsPassword),
+      [`GET ${url()}`]: answers(withScreen(loggedIn)),
       [`POST ${url("/screen")}`]: answers(shared)
     })
 
@@ -122,7 +128,7 @@ describe("codevisor desktop setup --screen", () => {
 
   it("names the screen's own command to run again when an administrator has to install", async () => {
     const machine = world(
-      { [`GET ${url()}`]: answers(withScreen({ ...loggedIn, missing, sudo: "none" })) },
+      { [`GET ${url("?screen=1")}`]: answers(withScreen({ ...loggedIn, missing, sudo: "none" })) },
       { interactive: false }
     )
 
@@ -135,7 +141,7 @@ describe("codevisor desktop setup --screen", () => {
     "refuses a %s session before installing anything",
     async (session) => {
       const machine = world({
-        [`GET ${url()}`]: answers(withScreen({ session, missing, sudo: "passwordless" }))
+        [`GET ${url("?screen=1")}`]: answers(withScreen({ session, missing, sudo: "passwordless" }))
       })
 
       expect(await screenSetupCommand(machine.deps)).toBe(1)
@@ -149,7 +155,7 @@ describe("codevisor desktop setup --screen", () => {
   it("says the screen is set up and will be tried again when it isn't shared yet, and how to undo it", async () => {
     const problem = "x0vncserver didn't open its socket (see /home/codevisor/screen.log)"
     const machine = world({
-      [`GET ${url()}`]: answers(withScreen(loggedIn)),
+      [`GET ${url("?screen=1")}`]: answers(withScreen(loggedIn)),
       [`POST ${url("/screen")}`]: answers(withScreen({ state: "stopped", ...loggedIn, problem }))
     })
 
@@ -161,7 +167,7 @@ describe("codevisor desktop setup --screen", () => {
   })
 
   it("says to update a server that doesn't know about screens", async () => {
-    const machine = world({ [`GET ${url()}`]: answers(status()) })
+    const machine = world({ [`GET ${url("?screen=1")}`]: answers(status()) })
 
     expect(await screenSetupCommand(machine.deps)).toBe(1)
     expect(machine.errors).toEqual([
@@ -217,6 +223,10 @@ describe("codevisor desktop status, about the screen", () => {
         problem: "the helper that shares the screen isn't running"
       },
       "The screen is set up to be shared but isn't: the helper that shares the screen isn't running"
+    ],
+    [
+      { state: "none" as const, session: "wayland" },
+      "This machine's screen isn't shared. This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
     ],
     [
       { state: "none" as const, ...loggedIn },

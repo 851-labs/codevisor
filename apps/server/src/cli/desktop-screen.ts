@@ -24,7 +24,7 @@ export const screenSetupCommand = async (
 ): Promise<number> => {
   const server = await desktopServer(deps, options)
   deps.log("==> Checking this machine")
-  const found = await server.ask("GET", "", quickMs)
+  const found = await server.ask("GET", "?screen=1", quickMs)
   if (found === undefined) return 1
   if (found.screen === undefined) return refused(deps, tooOld)
 

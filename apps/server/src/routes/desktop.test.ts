@@ -37,19 +37,23 @@ const recordingManager = (overrides: Partial<DesktopManager> = {}) => {
 
 const recordingScreen = () => {
   const calls: string[] = []
+  const askedSudo: boolean[] = []
   const answer = (name: string, state: ScreenStatus["state"]) => async () => {
     calls.push(name)
     return { state, missing: [], others: [] }
   }
   const screen: ScreenShare = {
-    status: answer("status", "waiting"),
+    status: async (options) => {
+      askedSudo.push(options?.askSudo === true)
+      return answer("status", "waiting")()
+    },
     installPackages: answer("installPackages", "none"),
     setUp: answer("setUp", "waiting"),
     remove: answer("remove", "none"),
     follow: async () => undefined,
     viewerJoined: () => undefined
   }
-  return { screen, calls }
+  return { screen, calls, askedSudo }
 }
 
 const start = async (manager: DesktopManager | undefined, screen?: ScreenShare) => {
@@ -74,14 +78,16 @@ describe("the desktop routes", () => {
 
   it("map the screen's requests to the screen share, and answer with both statuses", async () => {
     const { manager } = recordingManager()
-    const { screen, calls } = recordingScreen()
+    const { screen, calls, askedSudo } = recordingScreen()
     const { call } = await start(manager, screen)
     const withTheScreen = { state: "none", screen: { state: "waiting", missing: [], others: [] } }
 
     expect((await call("GET")).body).toMatchObject(withTheScreen)
+    expect((await call("GET", "?screen=1")).body).toMatchObject(withTheScreen)
     expect((await call("POST", "/screen/packages")).body).toMatchObject(withTheScreen)
     expect((await call("POST", "/screen")).body).toMatchObject(withTheScreen)
     expect((await call("DELETE", "/screen")).body).toMatchObject(withTheScreen)
+    expect(askedSudo).toEqual([false, true, false, false, false])
     expect(calls.filter((name) => name !== "status")).toEqual([
       "installPackages",
       "setUp",

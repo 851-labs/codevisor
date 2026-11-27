@@ -74,6 +74,27 @@ describe("installing what sharing the screen needs", () => {
     const machine = workstation({ programs: [...EVERY_PROGRAM, "sudo"], failing: ["sudo -n true"] })
 
     expect(await refusal(machine.screen.installPackages())).toMatchObject({ status: 403 })
-    expect(await machine.screen.status()).toMatchObject({ sudo: "password" })
+    expect(await machine.screen.status({ askSudo: true })).toMatchObject({ sudo: "password" })
+  })
+
+  it("asks sudo only when the screen's own setup wants to know", async () => {
+    const machine = workstation({ programs: [...EVERY_PROGRAM] })
+
+    expect(await machine.screen.status()).not.toHaveProperty("sudo")
+    expect(machine.asked).not.toContain("sudo -n true")
+
+    expect(await machine.screen.status({ askSudo: true })).toMatchObject({ sudo: "passwordless" })
+    expect(machine.asked).toContain("sudo -n true")
+  })
+
+  it("sees programs someone else installed at once, while something is still missing", async () => {
+    const machine = workstation({ programs: [...EVERY_PROGRAM] })
+    expect(await machine.screen.status()).toMatchObject({
+      missing: ["x0vncserver", "notify-send"]
+    })
+
+    machine.programs.add("X0tigervnc").add("notify-send")
+
+    expect(await machine.screen.status()).toMatchObject({ missing: [] })
   })
 })

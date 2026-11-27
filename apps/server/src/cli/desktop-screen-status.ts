@@ -1,5 +1,7 @@
 import type { DesktopStatus, ScreenStatus } from "@codevisor/api"
 
+import { waylandIsNotShared } from "../desktop/screen-share.js"
+
 export const screenStatusLines = (status: DesktopStatus): ReadonlyArray<string> => {
   const screen = status.screen
   if (screen === undefined) return []
@@ -23,10 +25,12 @@ export const describeScreen = (status: DesktopStatus, screen: ScreenStatus): str
   return "nobody is logged in at this machine's screen"
 }
 
-const notSharedLines = (screen: ScreenStatus): ReadonlyArray<string> =>
-  screen.session === undefined
-    ? []
-    : ["This machine's screen isn't shared. Share it with: codevisor desktop setup --screen"]
+const notSharedLines = (screen: ScreenStatus): ReadonlyArray<string> => {
+  if (screen.session === undefined) return []
+  if (screen.session !== "x11") return [`This machine's screen isn't shared. ${waylandIsNotShared}`]
+
+  return ["This machine's screen isn't shared. Share it with: codevisor desktop setup --screen"]
+}
 
 const where = (screen: ScreenStatus): string =>
   screen.display === undefined ? "" : ` (${sessionName(screen)}display ${screen.display})`

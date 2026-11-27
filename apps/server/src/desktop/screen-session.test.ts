@@ -105,7 +105,7 @@ const answering = (answers: Record<string, { code?: number; output: string }>) =
 })
 
 const shown = (session: string) =>
-  `loginctl show-session ${session} -p Name -p Seat -p Class -p Remote -p State`
+  `loginctl show-session ${session} -p Name -p Seat -p Class -p Remote -p State -p Type`
 
 describe("who is logged in at the machine's screen", () => {
   it("is everyone logind has seated, without greeters, logins over the network and sessions that are ending", async () => {
@@ -115,12 +115,12 @@ describe("who is logged in at the machine's screen", () => {
           " 2 1000 alice seat0 tty2\n c1 120 gdm seat0 tty1\n 5 1001 bob - pts/0\n 7 1002 carol seat0 tty3\n"
       },
       [shown("7")]: { output: "Name=carol\nSeat=seat0\nClass=user\nRemote=no\nState=closing\n" },
-      [shown("2")]: { output: "Name=alice\nSeat=seat0\nClass=user\nRemote=no\n" },
+      [shown("2")]: { output: "Name=alice\nSeat=seat0\nClass=user\nRemote=no\nType=x11\n" },
       [shown("c1")]: { output: "Name=gdm\nSeat=seat0\nClass=greeter\nRemote=no\n" },
       [shown("5")]: { output: "Name=bob\nSeat=\nClass=user\nRemote=yes\n" }
     })
 
-    expect(await accountsAtTheScreen(system)).toEqual(["alice"])
+    expect(await accountsAtTheScreen(system)).toEqual([{ account: "alice", type: "x11" }])
   })
 
   it("trusts logind when it lists nobody at a seat, whatever who says about remote displays", async () => {
@@ -140,7 +140,7 @@ describe("who is logged in at the machine's screen", () => {
       }
     })
 
-    expect(await accountsAtTheScreen(system)).toEqual(["alice"])
+    expect(await accountsAtTheScreen(system)).toEqual([{ account: "alice" }])
   })
 
   it("is unknown when neither can be asked", async () => {

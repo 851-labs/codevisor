@@ -1,3 +1,5 @@
+import { basename } from "node:path"
+
 import { keepOwnFoldersPrivate } from "./desktop-layout.js"
 import type { LocateSocket } from "./desktop-liveness.js"
 import type { DesktopSystem } from "./desktop-system.js"
@@ -6,6 +8,7 @@ import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
 export interface RunningHelper {
   readonly pid: number
   readonly display: string | undefined
+  readonly socket: string
 }
 
 export interface ShownScreen {
@@ -24,13 +27,13 @@ export interface ScreenHelperOptions {
 }
 
 export interface ScreenHelpers {
-  readonly running: (socket: string) => RunningHelper | undefined
+  readonly running: () => RunningHelper | undefined
   readonly start: (
     socket: string,
     shown: ShownScreen,
     scraper: string
   ) => Promise<string | undefined>
-  readonly stop: (helper: RunningHelper, socket: string) => Promise<boolean>
+  readonly stop: (helper: RunningHelper) => Promise<boolean>
   readonly forget: (socket: string) => boolean
   readonly started: () => boolean
 }
@@ -40,6 +43,9 @@ const socketPolls = 50
 const stopPolls = 50
 const portSettleMs = 1000
 const unchecked = "couldn't check that x0vncserver stays off the network"
+const socketPrefix = "codevisor-screen-"
+
+export const screenSocketPrefix = socketPrefix
 
 export const stillRunning = (pid: number): string =>
   `x0vncserver (process ${pid}) doesn't stop, even when killed`
@@ -48,14 +54,15 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
   const { system, pidFile, logFile, locate } = options
   const tcpPortsOf = options.tcpPortsOf ?? tcpPortsOfTheHelper
 
-  const running = (socket: string): RunningHelper | undefined => {
+  const running = (): RunningHelper | undefined => {
     const pid = Number(system.readText(pidFile)?.trim() ?? "")
     if (!Number.isInteger(pid) || pid <= 0 || !system.processAlive(pid)) return undefined
 
     const words = (system.readText(`/proc/${pid}/cmdline`) ?? "").split("\0")
-    if (!words.includes(socket)) return undefined
+    const socket = valueOf(words, "-rfbunixpath")
+    if (socket === undefined || !basename(socket).startsWith(socketPrefix)) return undefined
 
-    return { pid, display: words[words.indexOf("-display") + 1] }
+    return { pid, display: valueOf(words, "-display"), socket }
   }
 
   const forget = (socket: string): boolean => {
@@ -71,12 +78,12 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     return !system.processAlive(pid)
   }
 
-  const stop = async (helper: RunningHelper, socket: string): Promise<boolean> => {
+  const stop = async (helper: RunningHelper): Promise<boolean> => {
     system.terminate(helper.pid)
     if (!(await exits(helper.pid))) system.terminate(helper.pid, "SIGKILL")
     if (!(await exits(helper.pid))) return false
 
-    forget(socket)
+    forget(helper.socket)
     return true
   }
 
@@ -127,7 +134,7 @@ export const screenHelpers = (options: ScreenHelperOptions): ScreenHelpers => {
     system.writeText(pidFile, `${pid}\n`)
     const why = await whyItMayNotBeShared(pid, socket)
     if (why === undefined) return undefined
-    if (!(await stop({ pid, display: shown.display }, socket)))
+    if (!(await stop({ pid, display: shown.display, socket })))
       return `${why}; ${stillRunning(pid)}`
 
     return why
@@ -156,3 +163,8 @@ const scraperArguments = (display: string, socket: string): ReadonlyArray<string
 
 const tcpPortsOfTheHelper: TcpPortsOf = (helper, socket) =>
   holdsUnixSocket(helper, socket) ? tcpPortsListenedOnBy(helper) : undefined
+
+const valueOf = (words: ReadonlyArray<string>, flag: string): string | undefined => {
+  const at = words.indexOf(flag)
+  return at < 0 ? undefined : words[at + 1]
+}
