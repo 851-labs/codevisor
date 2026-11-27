@@ -242,6 +242,7 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
     for tile in tiles { refreshes[tile] = .keyframe }
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: request.pixelBuffer, sourceTimestampNs: request.sourceTimestampNs, capturedNs: request.capturedNs,
-      update: request.update, refreshes: refreshes, smallTiles: request.smallTiles)
+      update: request.update, refreshes: refreshes, smallTiles: request.smallTiles,
+      repeatedTiles: request.repeatedTiles)
   }
 }

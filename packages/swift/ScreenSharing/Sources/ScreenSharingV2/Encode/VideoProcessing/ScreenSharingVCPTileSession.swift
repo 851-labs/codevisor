@@ -116,8 +116,9 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     }
 
     do {
-      deliver(try encodedTile(submission, sample: sample), requested: submission.refresh)
-      if submission.keptItsCap { metrics.increment("changesKeptSharp") }
+      let encoded = try encodedTile(submission, sample: sample)
+      deliver(encoded, requested: submission.refresh)
+      if submission.keptItsCap, !encoded.isKeyFrame { metrics.increment("changesKeptSharp") }
     } catch {
       failed(submission.refresh, error.localizedDescription)
     }
@@ -139,7 +140,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
       tile: tile, update: submission.update, sourceTimestampNs: submission.sourceTimestampNs,
       capturedNs: submission.capturedNs, submittedNs: submission.submittedNs, encodedNs: ScreenSharingMetrics.nowNs,
       isKeyFrame: encoded.isKeyFrame, refresh: encoded.isKeyFrame ? .keyframe : submission.refresh,
-      ltrToken: encoded.ltrToken, accessUnit: encoded.accessUnit)
+      ltrToken: encoded.ltrToken, accessUnit: encoded.accessUnit, repeatsCapture: submission.repeatsCapture)
   }
 
   private func deliver(_ tile: ScreenSharingEncodedTile, requested: ScreenSharingTileRefresh?) {

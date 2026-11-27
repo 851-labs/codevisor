@@ -9,11 +9,12 @@ public struct ScreenSharingEncodedTile: Sendable {
   public let refresh: ScreenSharingTileRefresh?
   public let ltrToken: UInt64?
   public let accessUnit: ScreenSharingAccessUnit
+  public let repeatsCapture: Bool
 
   public init(
     tile: Int, update: ScreenSharingTileUpdate, sourceTimestampNs: Int64, capturedNs: Int64, submittedNs: Int64,
     encodedNs: Int64, isKeyFrame: Bool, refresh: ScreenSharingTileRefresh?, ltrToken: UInt64?,
-    accessUnit: ScreenSharingAccessUnit
+    accessUnit: ScreenSharingAccessUnit, repeatsCapture: Bool = false
   ) {
     self.tile = tile
     self.update = update
@@ -25,6 +26,7 @@ public struct ScreenSharingEncodedTile: Sendable {
     self.refresh = refresh
     self.ltrToken = ltrToken
     self.accessUnit = accessUnit
+    self.repeatsCapture = repeatsCapture
   }
 
   public var recovers: Bool { isKeyFrame || refresh != nil }
@@ -33,6 +35,6 @@ public struct ScreenSharingEncodedTile: Sendable {
     ScreenSharingEncodedTile(
       tile: tile, update: update, sourceTimestampNs: sourceTimestampNs, capturedNs: capturedNs,
       submittedNs: submittedNs, encodedNs: encodedNs, isKeyFrame: isKeyFrame, refresh: refresh, ltrToken: token,
-      accessUnit: accessUnit)
+      accessUnit: accessUnit, repeatsCapture: repeatsCapture)
   }
 }

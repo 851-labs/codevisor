@@ -108,9 +108,11 @@ enum ScreenSharingV2TileComparer {
   private static func screenPixelsPerSample(_ plane: ScreenSharingV2PixelPlane, of buffer: CVPixelBuffer) -> Int {
     guard let index = plane.index else { return 1 }
 
-    let across = CVPixelBufferGetWidth(buffer) / max(1, CVPixelBufferGetWidthOfPlane(buffer, index))
-    let down = CVPixelBufferGetHeight(buffer) / max(1, CVPixelBufferGetHeightOfPlane(buffer, index))
-    return max(1, across) * max(1, down)
+    let planeWidth = max(1, CVPixelBufferGetWidthOfPlane(buffer, index))
+    let planeHeight = max(1, CVPixelBufferGetHeightOfPlane(buffer, index))
+    let across = (CVPixelBufferGetWidth(buffer) + planeWidth - 1) / planeWidth
+    let down = (CVPixelBufferGetHeight(buffer) + planeHeight - 1) / planeHeight
+    return across * down
   }
 
   private static func pixelBytes(_ plane: ScreenSharingV2PixelPlane) -> Int {

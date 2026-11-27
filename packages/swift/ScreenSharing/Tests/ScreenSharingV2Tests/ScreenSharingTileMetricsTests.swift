@@ -35,11 +35,11 @@ struct ScreenSharingTileMetricsTests {
     refinement: Bool, repeatsCapture: Bool, requested: ScreenSharingTileRefresh?, timed: Int
   ) {
     let metrics = ScreenSharingMetrics()
-    let update = ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement, repeatsCapture: repeatsCapture)
+    let update = ScreenSharingTileUpdate(id: 1, tiles: [0], isRefinement: refinement)
     let tile = ScreenSharingEncodedTile(
       tile: 0, update: update, sourceTimestampNs: 1,
       capturedNs: 1_000_000, submittedNs: 3_000_000, encodedNs: 9_000_000, isKeyFrame: false, refresh: requested,
-      ltrToken: nil, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])))
+      ltrToken: nil, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])), repeatsCapture: repeatsCapture)
 
     ScreenSharingTileMetrics(metrics).record(tile, requested: requested)
 

@@ -10,7 +10,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let tiles: Set<Int>
     var small: Set<Int> = []
     let isRefinement: Bool
-    var repeatsCapture = true
+    let repeated: Set<Int>
   }
 
   public let metrics: ScreenSharingMetrics
@@ -155,40 +155,41 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       let tiles = slot.waitingTiles.union(refreshing)
       if !tiles.isEmpty {
         return Plan(
-          capture: waiting, tiles: tiles, small: slot.smallTiles, isRefinement: false,
-          repeatsCapture: slot.waitingRepeatsLastEncoded)
+          capture: waiting, tiles: tiles, small: slot.smallTiles, isRefinement: false, repeated: slot.repeatedTiles)
       }
 
       metrics.increment("captureUnchanged")
       slot.encoding(waiting)
     }
     guard let last = slot.lastEncoded else { return nil }
-    guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
+    guard refreshing.isEmpty else {
+      return Plan(capture: last, tiles: refreshing, isRefinement: false, repeated: refreshing)
+    }
     guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles, aligned: refreshPhase.aligned)
     else { return nil }
 
-    return Plan(capture: last, tiles: [tile], isRefinement: true)
+    return Plan(capture: last, tiles: [tile], isRefinement: true, repeated: [tile])
   }
 
   private func encode(_ plan: Plan) {
     slot.encoding(plan.capture)
     deferredCapture = false
     nextUpdate &+= 1
-    let update = ScreenSharingTileUpdate(
-      id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement, repeatsCapture: plan.repeatsCapture)
+    let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
     let small = plan.small.subtracting(refreshes.keys)
     note(update)
     for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
-      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes, smallTiles: small))
+      try encoder.encode(
+        plan.capture.request(update: update, refreshes: refreshes, smallTiles: small, repeatedTiles: plan.repeated))
       metrics.increment("smallChangeRequests", by: small.count)
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
       for tile in plan.tiles { release(tile) }
       recovery.restore(refreshes)
-      slot.requeue(tiles: plan.tiles)
+      slot.requeue(tiles: plan.tiles, repeating: plan.isRefinement)
     }
   }
 
@@ -306,7 +307,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int) {
-    slot.requeue(tiles: [tile])
+    slot.requeue(tiles: [tile], repeating: refinement.sharpenedLast.contains(tile))
     guard let refresh else { return }
 
     recovery.retry(refresh, tile: tile)

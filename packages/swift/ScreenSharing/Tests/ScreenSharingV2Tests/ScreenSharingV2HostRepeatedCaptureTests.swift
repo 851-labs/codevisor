@@ -8,12 +8,9 @@ struct ScreenSharingV2HostRepeatedCaptureTests {
   private let transport = LoopbackMediaTransport()
   private let scheduler = ManualScheduler()
 
-  @Test func aDroppedRefinementEncodedAgainAsAChangeSaysItRepeatsItsCaptureAndANewCaptureDoesNot() async throws {
+  @Test func aDroppedRefinementEncodedAgainAsAChangeRepeatsItsCaptureAndANewCaptureDoesNot() async throws {
     let encoder = RecordingTileEncoder()
-    let host = ScreenSharingV2Host(
-      transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
-      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refreshPhase: .everyNanosecond)
-    host.start()
+    let host = started(encoder)
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
@@ -28,9 +25,31 @@ struct ScreenSharingV2HostRepeatedCaptureTests {
     host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
     await encoder.encodes.cancellableWait(for: 4)
 
-    let updates = encoder.requests.map(\.update)
-    #expect(updates.map(\.isRefinement) == [false, true, false, false])
-    #expect(updates.map(\.repeatsCapture) == [false, true, true, false])
+    #expect(encoder.requests.map(\.update.isRefinement) == [false, true, false, false])
+    #expect(encoder.requests.map(\.repeatedTiles) == [[], [0], [0], []])
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000, 1_000, 2_000])
+  }
+
+  @Test func aDroppedFirstEncodeOfANewCaptureIsEncodedAgainAsItsOwnChange() async throws {
+    let encoder = RecordingTileEncoder()
+    let host = started(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    encoder.emit(.dropped(tile: 0, refresh: nil))
+    await encoder.encodes.cancellableWait(for: 2)
+
+    #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
+    #expect(encoder.requests.map(\.repeatedTiles) == [[], []])
+    #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
+  }
+
+  private func started(_ encoder: RecordingTileEncoder) -> ScreenSharingV2Host {
+    let host = ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refreshPhase: .everyNanosecond)
+    host.start()
+    return host
   }
 }

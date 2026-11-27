@@ -7,10 +7,11 @@ public struct ScreenSharingTileEncodeRequest: @unchecked Sendable {
   public let update: ScreenSharingTileUpdate
   public let refreshes: [Int: ScreenSharingTileRefresh]
   public let smallTiles: Set<Int>
+  public let repeatedTiles: Set<Int>
 
   public init(
     pixelBuffer: CVPixelBuffer, sourceTimestampNs: Int64, capturedNs: Int64, update: ScreenSharingTileUpdate,
-    refreshes: [Int: ScreenSharingTileRefresh] = [:], smallTiles: Set<Int> = []
+    refreshes: [Int: ScreenSharingTileRefresh] = [:], smallTiles: Set<Int> = [], repeatedTiles: Set<Int> = []
   ) {
     self.pixelBuffer = pixelBuffer
     self.sourceTimestampNs = sourceTimestampNs
@@ -18,5 +19,6 @@ public struct ScreenSharingTileEncodeRequest: @unchecked Sendable {
     self.update = update
     self.refreshes = refreshes
     self.smallTiles = smallTiles
+    self.repeatedTiles = repeatedTiles
   }
 }

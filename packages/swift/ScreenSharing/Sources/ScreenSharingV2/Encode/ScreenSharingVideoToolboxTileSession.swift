@@ -24,6 +24,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     let capturedNs: Int64
     let refresh: ScreenSharingTileRefresh?
     let submittedNs: Int64
+    let repeatsCapture: Bool
   }
 
   private static let openingAttempts = 3
@@ -179,7 +180,8 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
       let presentationNs = state.clock.presentationNs(submittedAtNs: submittedNs)
       let submission = Submission(
         id: state.nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
-        capturedNs: request.capturedNs, refresh: request.refreshes[tile], submittedNs: submittedNs)
+        capturedNs: request.capturedNs, refresh: request.refreshes[tile], submittedNs: submittedNs,
+        repeatsCapture: request.repeatedTiles.contains(tile))
       return (submission, acknowledged, presentationNs)
     }
   }
@@ -202,7 +204,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
       tile: tile, update: submission.update, sourceTimestampNs: submission.sourceTimestampNs,
       capturedNs: submission.capturedNs, submittedNs: submission.submittedNs, encodedNs: ScreenSharingMetrics.nowNs,
       isKeyFrame: sample.isKeyFrame, refresh: sample.isKeyFrame ? .keyframe : submission.refresh,
-      ltrToken: sample.ltrToken, accessUnit: sample.accessUnit)
+      ltrToken: sample.ltrToken, accessUnit: sample.accessUnit, repeatsCapture: submission.repeatsCapture)
   }
 
   private func deliver(_ encoded: ScreenSharingEncodedTile, requested: ScreenSharingTileRefresh?) {

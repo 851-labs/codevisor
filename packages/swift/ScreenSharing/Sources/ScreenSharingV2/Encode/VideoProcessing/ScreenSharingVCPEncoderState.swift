@@ -28,7 +28,7 @@ struct ScreenSharingVCPEncoderState {
     let submission = ScreenSharingVCPSubmission(
       id: nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
       capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: lastPresentationNs,
-      highestQP: highestQP(for: request, refresh: refresh))
+      highestQP: highestQP(for: request, refresh: refresh), repeatsCapture: request.repeatedTiles.contains(tile))
     sharpenedLast = request.update.isRefinement
     inFlight[submission.id] = submission
     return submission
