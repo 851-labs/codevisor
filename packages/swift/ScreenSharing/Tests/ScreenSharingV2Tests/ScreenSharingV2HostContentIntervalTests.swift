@@ -87,10 +87,10 @@ struct ScreenSharingV2HostContentIntervalTests {
     let host = started(encoder)
     defer { host.stop() }
 
-    for (frames, top, bottom) in [(0, 10, 10), (1, 20, 10), (2, 30, 10), (5, 30, 20)] {
+    for (index, (frames, top, bottom)) in [(0, 10, 10), (1, 20, 10), (2, 30, 10), (5, 30, 20)].enumerated() {
       host.push(try TestPixels.frame(shades: [UInt8(top), 10, UInt8(bottom)], timestampNs: Self.at(frames: frames)))
-      await encoder.encodes.cancellableWait(for: encoder.requests.count + 1)
-      encoder.emitTiles(of: encoder.requests[encoder.requests.count - 1])
+      await encoder.encodes.cancellableWait(for: index + 1)
+      encoder.emitTiles(of: encoder.requests[index])
     }
 
     #expect(encoder.requests.map(\.update.tiles) == [[0, 1], [0], [0], [1]])
