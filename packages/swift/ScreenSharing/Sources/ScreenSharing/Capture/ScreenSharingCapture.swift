@@ -141,9 +141,9 @@
     private func inTurn(_ work: @escaping @MainActor () async throws -> Void) async throws {
       let queue = reconfigurations
       try await queue.run { [self] in
+        await startSettled()
         guard queue === reconfigurations else { return try await inTurn(work) }
 
-        await startSettled()
         try await work()
       }
     }
@@ -204,11 +204,12 @@
     }
 
     public func setDynamicRange(_ range: ScreenSharingDynamicRange) async throws {
-      guard range != dynamicRange else { return }
       guard range == .standard || pixelFormat == kCVPixelFormatType_32BGRA else {
         throw ScreenSharingError.invalid("High dynamic range needs a 4:4:4 capture.")
       }
       try await inTurn { [self] in
+        guard range != dynamicRange else { return }
+
         let previous = dynamicRange
         dynamicRange = range
         do { try await applyCurrent() } catch {

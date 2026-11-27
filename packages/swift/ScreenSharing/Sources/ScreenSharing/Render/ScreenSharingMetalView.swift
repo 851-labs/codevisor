@@ -383,7 +383,12 @@ package final class TextureFrame: @unchecked Sendable {
       than request: ScreenSharingPreparationRequest, in range: ScreenSharingDynamicRange, afterWaitingNs waitedNs: Int64
     ) -> (ScreenSharingVideoFrame, ScreenSharingMetalEncoder.Textures)? {
       guard waitedNs > Self.replacesAfterWaitNs, let newer = request.newer?() else { return nil }
-      guard let textures = encoder.textures(for: newer), textures.dynamicRange == range else {
+      guard let textures = encoder.textures(for: newer) else {
+        metrics.increment("renderFramesDroppedAfterDrawableWait")
+        request.discardNewer?()
+        return nil
+      }
+      guard textures.dynamicRange == range else {
         metrics.increment("renderFramesDeferredAfterDrawableWait")
         return nil
       }

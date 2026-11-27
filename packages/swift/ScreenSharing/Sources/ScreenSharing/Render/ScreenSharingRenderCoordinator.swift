@@ -23,6 +23,7 @@ package struct ScreenSharingPreparationRequest: Sendable {
   package let geometry: ScreenSharingRenderGeometry
   package let queuedAtNs: Int64
   package var newer: (@Sendable () -> ScreenSharingVideoFrame?)?
+  package var discardNewer: (@Sendable () -> Void)?
 }
 
 package struct ScreenSharingPreparedSubmission: Sendable {
@@ -172,7 +173,10 @@ package final class ScreenSharingRenderCoordinator {
   private func holdsToCatchUp() -> Bool {
     guard let waitNs = catchUp.holds(atNs: clock.now()) else { return false }
 
-    if let arrived = mailbox.take() { heldFrame = arrived }
+    if let arrived = mailbox.take() {
+      if heldFrame != nil { metrics.increment("renderHeldFramesSuperseded") }
+      heldFrame = arrived
+    }
     guard !catchUpFallbackScheduled else { return true }
 
     catchUpFallbackScheduled = true
@@ -193,9 +197,9 @@ package final class ScreenSharingRenderCoordinator {
     for arrivedNs in mailbox.takeArrivals() { catchUp.arrived(atNs: arrivedNs) }
   }
 
-  private func noteCommit(waitedForDrawableNs waitedNs: Int64) {
+  private func noteCommit(waitedForDrawableNs waitedNs: Int64, newFrame: Bool) {
     noteArrivals()
-    guard catchUp.committed(waitedNs: waitedNs, atNs: clock.now()) else { return }
+    guard catchUp.committed(waitedNs: waitedNs, newFrame: newFrame, atNs: clock.now()) else { return }
 
     metrics.increment("renderCatchUps")
   }
@@ -222,7 +226,7 @@ package final class ScreenSharingRenderCoordinator {
     guard !stopped, !inFlight else { return false }
     inFlight = true
     occupancy += 1
-    noteCommit(waitedForDrawableNs: drawableWaitNs)
+    noteCommit(waitedForDrawableNs: drawableWaitNs, newFrame: isNewFrame)
     submit(
       submission, retaining: retained, frame: SubmittedFrame(frame, isNewFrame: isNewFrame), submittedAt: submittedAt)
     return true
@@ -241,6 +245,7 @@ package final class ScreenSharingRenderCoordinator {
     var request = ScreenSharingPreparationRequest(
       frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
     request.newer = { taken.take(from: mailbox) }
+    request.discardNewer = { taken.discard() }
     preparer.prepare(request) { [weak self] prepared in
       hop { self?.finishPreparation(token: token, prepared) }
     }
@@ -272,7 +277,7 @@ package final class ScreenSharingRenderCoordinator {
       heldFrame = taken
     }
     let drawn = prepared.replacement.map { SubmittedFrame($0, isNewFrame: true) } ?? pending.frame
-    noteCommit(waitedForDrawableNs: prepared.drawableWaitNs)
+    noteCommit(waitedForDrawableNs: prepared.drawableWaitNs, newFrame: drawn.isNewFrame && prepared.replacement == nil)
     submit(prepared.submission, retaining: prepared.retained, frame: drawn, submittedAt: CACurrentMediaTime())
   }
 

@@ -67,13 +67,15 @@ struct ScreenSharingRenderCatchUpTests {
     }
 
     func finish(
-      waitedNs: Int64, takingNewer: Bool = false, deferringNewer: Bool = false, failing: Bool = false
+      waitedNs: Int64, takingNewer: Bool = false, deferringNewer: Bool = false, failing: Bool = false,
+      discardingNewer: Bool = false
     ) -> Submission? {
       guard let (request, completion) = lock.withLock({ outstanding.isEmpty ? nil : outstanding.removeFirst() })
       else { return nil }
 
       let submission = Submission()
-      let newer = takingNewer || deferringNewer || failing ? request.newer?() : nil
+      let newer = takingNewer || deferringNewer || failing || discardingNewer ? request.newer?() : nil
+      if discardingNewer { request.discardNewer?() }
       guard !failing else {
         completion(nil)
         return nil
@@ -272,5 +274,48 @@ struct ScreenSharingRenderCatchUpTests {
     }
 
     #expect(f.counter("renderCatchUps") == 1)
+  }
+
+  @Test func aFrameTheWorkerAlreadySwappedInIsNotFollowedByAHold() throws {
+    let f = Fixture()
+    for index in Int64(0)...4 { try f.arrive(UInt32(index), at: index) }
+    f.time.advance(to: 1_000_000_000 + 5 * Self.periodNs - 3_000_000)
+    f.mailbox.put(try f.frame(5))
+    #expect(f.draw())
+    f.time.advance(to: 1_000_000_000 + 5 * Self.periodNs + 1_000_000)
+    f.mailbox.put(try f.frame(6))
+    f.preparer.finish(waitedNs: Self.starvedWaitNs, takingNewer: true)?.finish()
+
+    try f.arrive(7, at: 6)
+
+    #expect(f.counter("renderCatchUps") == 0)
+    #expect(f.preparer.requested == [0, 1, 2, 3, 4, 5, 7])
+  }
+
+  @Test func framesThatReplaceTheHeldOneDuringAHoldCountAsSuperseded() throws {
+    let f = Fixture()
+    for index in Int64(0)...4 { try f.arrive(UInt32(index), at: index) }
+    try f.arrive(5, at: 5, waitedNs: Self.starvedWaitNs)
+    f.time.advance(to: 1_000_000_000 + 5 * Self.periodNs + 5_000_000)
+    f.mailbox.put(try f.frame(6))
+    #expect(!f.draw())
+    f.time.advance(to: 1_000_000_000 + 5 * Self.periodNs + 10_000_000)
+    f.mailbox.put(try f.frame(7))
+    #expect(!f.draw())
+
+    #expect(f.counter("renderHeldFramesSuperseded") == 1)
+  }
+
+  @Test func aNewerFrameTheWorkerCouldNotMakeTexturesForIsDroppedNotHeld() throws {
+    let f = Fixture()
+    f.time.advance(to: 1_000_000_000)
+    f.mailbox.put(try f.frame(1))
+    #expect(f.draw())
+    f.mailbox.put(try f.frame(2))
+
+    f.preparer.finish(waitedNs: Self.starvedWaitNs, discardingNewer: true)?.finish()
+
+    #expect(!f.mailbox.isHolding && !f.draw())
+    #expect(f.preparer.requested == [1])
   }
 }

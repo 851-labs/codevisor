@@ -86,4 +86,20 @@ struct ScreenSharingFrameCatchUpTests {
 
     #expect(!starved)
   }
+
+  @Test func fullRateArrivalsThatStoppedLongAgoDoNotStartACatchUp() {
+    var catchUp = Self.atFullRate(through: 4)
+
+    let starved = catchUp.committed(waitedNs: Self.starvedWaitNs, atNs: Self.refresh(4) + 2_000_000_000)
+
+    #expect(!starved)
+  }
+
+  @Test func aRedrawThatWaitedForADrawableDoesNotStartACatchUp() {
+    var catchUp = Self.atFullRate(through: 4)
+
+    let starved = catchUp.committed(waitedNs: Self.starvedWaitNs, newFrame: false, atNs: Self.refresh(4) + 1_300_000)
+
+    #expect(!starved)
+  }
 }

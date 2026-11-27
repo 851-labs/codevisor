@@ -253,5 +253,26 @@
           kCVPixelFormatType_32BGRA, kCVPixelFormatType_32BGRA, ScreenSharingDynamicRange.highCapturePixelFormat,
         ])
     }
+
+    @Test func aDynamicRangeChangeQueuedBehindAnotherIsNotDropped() async throws {
+      let fixture = CaptureFixture(capture: ScreenSharingCapture(pixelFormat: kCVPixelFormatType_32BGRA))
+      try await start(fixture, refresh: Refresh(60))
+      let held = CaptureGate()
+      fixture.stream.holdUpdate = held
+      let first = Task { @MainActor in try await fixture.capture.update(configuration: .init(width: 1600, height: 900))
+      }
+      await held.entered.wait()
+      let toHigh = Task { @MainActor in try await fixture.capture.setDynamicRange(.high) }
+      let back = Task { @MainActor in try await fixture.capture.setDynamicRange(.standard) }
+      for _ in 0..<20 { await Task.yield() }
+
+      held.release()
+      try await first.value
+      try await toHigh.value
+      try await back.value
+
+      #expect(fixture.capture.dynamicRange == .standard)
+      #expect(fixture.stream.updated?.pixelFormat == kCVPixelFormatType_32BGRA)
+    }
   }
 #endif

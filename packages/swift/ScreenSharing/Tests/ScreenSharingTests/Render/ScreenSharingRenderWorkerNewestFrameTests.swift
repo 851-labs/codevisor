@@ -73,5 +73,22 @@
       #expect(result == nil && newer.taken == 1)
       #expect(metrics.counter("renderFramesDeferredAfterDrawableWait") == 1)
     }
+
+    @Test func aNewerFrameWithoutTexturesIsDroppedInsteadOfHeld() throws {
+      let newer = Newer(try Self.frame(format: kCVPixelFormatType_32ARGB, rtp: 2))
+      let discarded = Discarded()
+      var request = try Self.request(newer: newer)
+      request.discardNewer = { discarded.count += 1 }
+
+      let result = worker.newer(than: request, in: .standard, afterWaitingNs: 14_700_000)
+
+      #expect(result == nil && newer.taken == 1 && discarded.count == 1)
+      #expect(metrics.counter("renderFramesDroppedAfterDrawableWait") == 1)
+      #expect(metrics.counter("renderFramesDeferredAfterDrawableWait") == 0)
+    }
+
+    private final class Discarded: @unchecked Sendable {
+      var count = 0
+    }
   }
 #endif

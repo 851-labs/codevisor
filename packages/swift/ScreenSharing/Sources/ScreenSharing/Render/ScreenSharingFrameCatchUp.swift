@@ -25,9 +25,10 @@ struct ScreenSharingFrameCatchUp {
     if arrivals.count > Self.trackedArrivals { arrivals.removeFirst() }
   }
 
-  mutating func committed(waitedNs: Int64, atNs nowNs: Int64) -> Bool {
+  mutating func committed(waitedNs: Int64, newFrame: Bool = true, atNs nowNs: Int64) -> Bool {
     let spaced = lastCatchUpNs.map { nowNs - $0 > Self.spacingNs } ?? true
-    guard waitedNs > Self.starvedAfterNs, atFullRate, spaced else { return false }
+    let recent = arrivals.last.map { nowNs - $0 <= waitedNs + periodNs } ?? false
+    guard newFrame, waitedNs > Self.starvedAfterNs, atFullRate, recent, spaced else { return false }
 
     starvedAtNs = nowNs
     return true
