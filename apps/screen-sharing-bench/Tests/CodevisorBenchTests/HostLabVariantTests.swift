@@ -11,7 +11,7 @@ struct HostLabVariantTests {
     #expect(
       variant.arguments == [
         "--variant", text, "--queue", "6", "--cursor", "0", "--fps", "30", "--ltr", "0", "--vcp", "1", "--bgra", "1",
-        "--refine", "1", "--converge", "900", "--tiles", "1",
+        "--small", "16384", "--refine", "1", "--converge", "900", "--tiles", "1",
       ])
   }
 
