@@ -37,33 +37,47 @@ const aliceAtTheMonitor = {
   DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1001/bus"
 }
 
-const someoneElseIsSeated = {
-  "loginctl list-sessions --no-legend": { code: 0, output: " 2 1002 alice seat0 tty2\n" },
-  "loginctl show-session 2 -p Name -p Seat -p Class -p Remote": {
+const seated = (account: string) => ({
+  "loginctl list-sessions --no-legend": { code: 0, output: ` 2 1002 ${account} seat0 tty2\n` },
+  "loginctl show-session 2 -p Name -p Seat -p Class -p Remote -p State": {
     code: 0,
-    output: "Name=alice\nSeat=seat0\nClass=user\nRemote=no\n"
+    output: `Name=${account}\nSeat=seat0\nClass=user\nRemote=no\nState=active\n`
   }
-}
+})
+const someoneElseIsSeated = seated("alice")
+const nobodyIsSeated = { "loginctl list-sessions --no-legend": { code: 0, output: "" } }
 
 interface Scene extends FakeMachineOptions {
-  readonly tcpPorts?: ReadonlyArray<number>
+  readonly tcpPorts?: () => ReadonlyArray<number> | undefined
 }
 
 const workstation = (scene: Scene = {}) => {
+  const logind: NonNullable<FakeMachineOptions["results"]> = { ...nobodyIsSeated, ...scene.results }
   const machine = fakeMachine({
     programs: withTheScreenPrograms,
     folders: { "/proc": [String(sessionProcess)] },
     ...scene,
+    results: logind,
     files: { ...UBUNTU, ...scene.files }
   })
   const clock = { now: 1_000_000 }
   const logIn = (env: Record<string, string> = aliceAtTheMonitor): void => {
     machine.files.set(`/proc/${sessionProcess}/status`, "Uid:\t1001\t1001\n")
     machine.files.set(`/proc/${sessionProcess}/environ`, environ(env))
+    Object.assign(logind, seated("codevisor"))
+  }
+  const endTheSession = (): void => {
+    Object.assign(logind, nobodyIsSeated)
+    machine.system.terminate(helper)
   }
   const logOut = (): void => {
     machine.files.delete(`/proc/${sessionProcess}/environ`)
-    machine.system.terminate(helper)
+    endTheSession()
+  }
+  const settled = async () => {
+    let status = await screen.status()
+    while (status.busy !== undefined) status = await screen.status()
+    return status
   }
   const locate = (configured: string): PrivateSocket =>
     machine.system.processAlive(helper)
@@ -75,10 +89,10 @@ const workstation = (scene: Scene = {}) => {
     logsDir: LOGS_DIR,
     changed: () => void (machine.changes.count += 1),
     locate,
-    tcpPortsOf: () => scene.tcpPorts ?? [],
+    tcpPortsOf: () => (scene.tcpPorts === undefined ? [] : scene.tcpPorts()),
     now: () => clock.now
   })
-  return { ...machine, screen, logIn, logOut, clock }
+  return { ...machine, screen, logIn, logOut, endTheSession, settled, clock }
 }
 
 const refusal = (promise: Promise<unknown>) =>
@@ -230,12 +244,13 @@ describe("sharing the screen the server's account is logged in at", () => {
     })
     expect(await machine.screen.status()).toMatchObject({
       state: "none",
-      missing: ["x0vncserver", "notify-send"]
+      missing: ["x0vncserver", "notify-send"],
+      sudo: "passwordless"
     })
   })
 
   it("stops a helper that listens on the network, says so, and waits before trying again", async () => {
-    const machine = workstation({ tcpPorts: [5900] })
+    const machine = workstation({ tcpPorts: () => [5900] })
     machine.logIn()
 
     const status = await machine.screen.setUp()
@@ -253,6 +268,51 @@ describe("sharing the screen the server's account is logged in at", () => {
     machine.clock.now += 30_000
     await machine.screen.follow()
     expect(machine.spawned).toHaveLength(2)
+  })
+
+  it.each<[string, () => ReadonlyArray<number> | undefined]>([
+    ["can't tell which ports the helper has open", () => undefined],
+    [
+      "finds the helper gone while it looks",
+      () => {
+        throw new Error("ENOENT: /proc/4242/fd")
+      }
+    ]
+  ])("stops a helper when it %s, instead of sharing unchecked", async (_name, tcpPorts) => {
+    const machine = workstation({ tcpPorts })
+    machine.logIn()
+
+    expect(await machine.screen.setUp()).toMatchObject({
+      state: "stopped",
+      problem: "couldn't check that x0vncserver stays off the network"
+    })
+    expect(machine.terminated).toEqual([helper])
+  })
+
+  it("doesn't take processes a session left behind for someone still logged in", async () => {
+    const machine = workstation()
+    machine.logIn()
+    await machine.screen.setUp()
+
+    machine.endTheSession()
+    await machine.screen.follow()
+    machine.clock.now += 60_000
+    await machine.screen.follow()
+
+    expect(machine.spawned).toHaveLength(1)
+    expect(await machine.screen.status()).toEqual({ state: "waiting", missing: [], others: [] })
+  })
+
+  it("keeps sharing on the socket it recorded, wherever the server's runtime folder is now", async () => {
+    const recorded = "/home/codevisor/.codevisor/run/codevisor-screen.sock"
+    const entry = { ...screenEntry, vnc: { socket: recorded, name: "Screen" } }
+    const machine = workstation({ files: { [CONFIG]: JSON.stringify({ displays: [entry] }) } })
+    machine.logIn()
+
+    await machine.screen.follow()
+
+    expect(machine.spawned[0]?.args).toContain(recorded)
+    expect(await machine.screen.status()).toMatchObject({ state: "running" })
   })
 
   it("stops sharing and forgets the screen when it is removed, keeping the desktop", async () => {
@@ -306,21 +366,35 @@ describe("telling the person at the screen that someone is viewing it", () => {
 })
 
 describe("installing what sharing the screen needs", () => {
-  it("installs the scraping server and the notifier as root when that needs no password", async () => {
-    const machine = workstation({ programs: [...EVERY_PROGRAM] })
+  const install =
+    /^sudo -n timeout .* apt-get .* install -y -q --no-install-recommends tigervnc-scraping-server libnotify-bin$/
+
+  it("installs the scraping server and the notifier as root, and says it is busy meanwhile", async () => {
+    const installed = Promise.withResolvers<void>()
+    const machine = workstation({
+      programs: [...EVERY_PROGRAM],
+      holds: { prefix: "sudo -n timeout", until: installed.promise }
+    })
+
+    expect(await machine.screen.installPackages()).toMatchObject({ busy: "Installing packages" })
+
+    installed.resolve()
+    expect(await machine.settled()).not.toHaveProperty("failure")
+    expect(machine.commands).toContainEqual(expect.stringMatching(install))
+  })
+
+  it("keeps why an install failed until what was missing is there", async () => {
+    const machine = workstation({ programs: [...EVERY_PROGRAM], failing: ["sudo -n timeout"] })
 
     await machine.screen.installPackages()
 
-    expect(machine.commands).toContainEqual(
-      expect.stringMatching(
-        /^sudo -n timeout .* apt-get .* install -y -q --no-install-recommends tigervnc-scraping-server libnotify-bin$/
-      )
-    )
+    expect(await machine.settled()).toMatchObject({ failure: "Installing packages failed:\n" })
   })
 
   it("leaves it to an administrator when the server's account needs a password", async () => {
-    const machine = workstation({ failing: ["sudo -n true"] })
+    const machine = workstation({ programs: [...EVERY_PROGRAM, "sudo"], failing: ["sudo -n true"] })
 
     expect(await refusal(machine.screen.installPackages())).toMatchObject({ status: 403 })
+    expect(await machine.screen.status()).toMatchObject({ sudo: "password" })
   })
 })

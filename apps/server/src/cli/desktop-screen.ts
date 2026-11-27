@@ -1,7 +1,7 @@
 import type { DesktopStatus } from "@codevisor/api"
 
 import { installPlan, osRelease } from "../desktop/desktop-packages.js"
-import { someoneElseIsThere } from "../desktop/screen-share.js"
+import { someoneElseIsThere, waylandIsNotShared } from "../desktop/screen-share.js"
 import { describeScreen } from "./desktop-screen-status.js"
 import {
   asAdministrator,
@@ -13,7 +13,8 @@ import {
   startMs
 } from "./desktop.js"
 
-const installMs = 15 * 60 * 1000
+const rerun = "codevisor desktop setup --screen"
+const sessionsOnWayland = new Set(["wayland", "wlroots"])
 const tooOld =
   "Codevisor on this machine is too old to share its screen. Update it, then run this again."
 
@@ -30,6 +31,7 @@ export const screenSetupCommand = async (
   deps.log(`    ${osRelease(deps.system).name}, ${describeScreen(found, found.screen)}`)
   const isSomeoneElses = found.screen.session === undefined && found.screen.others.length > 0
   if (isSomeoneElses) return refused(deps, someoneElseIsThere(found.screen.others, found.account))
+  if (sessionsOnWayland.has(found.screen.session ?? "")) return refused(deps, waylandIsNotShared)
 
   const equipped = await installWhatIsMissing(deps, server, found)
   if (equipped === undefined) return 1
@@ -70,19 +72,19 @@ const installWhatIsMissing = async (
   const plan = await installPlan(deps.system, osRelease(deps.system))
   if (plan === undefined) {
     deps.error(
-      `Codevisor can't install packages on this system. Install these yourself, then run \`codevisor desktop setup --screen\` again: ${missing.join(", ")} (TigerVNC's x0vncserver, and notify-send from libnotify).`
+      `Codevisor can't install packages on this system. Install these yourself, then run \`${rerun}\` again: ${missing.join(", ")} (TigerVNC's x0vncserver, and notify-send from libnotify).`
     )
     return undefined
   }
 
   deps.log(`==> Installing ${missing.join(" and ")} with ${plan.manager}`)
-  const equipped = await asAdministrator(
-    deps,
-    server,
-    status,
-    { what: "Installing packages", path: "/screen/packages", commands: plan.screenCommands },
-    installMs
-  )
+  const equipped = await asAdministrator(deps, server, status, {
+    what: "Installing packages",
+    path: "/screen/packages",
+    commands: plan.screenCommands,
+    rerun,
+    progress: (answer) => answer.screen
+  })
   const still = equipped?.screen?.missing ?? []
   if (equipped === undefined || still.length === 0) return equipped
 

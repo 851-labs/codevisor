@@ -63,20 +63,52 @@ describe("codevisor desktop setup --screen", () => {
     expect(machine.httpCalls(`POST ${url("/screen")}`)).toBe(0)
   })
 
-  it("has the server install what is missing when its account needs no sudo password", async () => {
+  it("has the server install what is missing when its account needs no sudo password, and waits for it", async () => {
+    const toInstall = withScreen({ ...loggedIn, missing, sudo: "passwordless" })
+    const installing = withScreen({ ...loggedIn, missing, busy: "Installing packages" })
     const machine = world({
-      [`GET ${url()}`]: answers(withScreen({ ...loggedIn, missing })),
-      [`POST ${url("/screen/packages")}`]: answers(withScreen(loggedIn)),
+      [`GET ${url()}`]: answers(toInstall, installing, withScreen(loggedIn)),
+      [`POST ${url("/screen/packages")}`]: answers(installing),
       [`POST ${url("/screen")}`]: answers(shared)
     })
 
     expect(await screenSetupCommand(machine.deps)).toBe(0)
     expect(machine.logs[2]).toBe("==> Installing x0vncserver and notify-send with apt")
+    expect(machine.httpCalls(`GET ${url()}`)).toBe(3)
     expect(machine.interactiveCalls).toEqual([])
   })
 
+  it("goes by the screen's own install, whatever an earlier desktop install left behind", async () => {
+    const earlier = { failure: "Installing packages failed:\nE: Unable to locate package xfce4" }
+    const toInstall = { ...withScreen({ ...loggedIn, missing, sudo: "passwordless" }), ...earlier }
+    const installed = { ...withScreen(loggedIn), ...earlier }
+    const machine = world({
+      [`GET ${url()}`]: answers(toInstall),
+      [`POST ${url("/screen/packages")}`]: answers(installed),
+      [`POST ${url("/screen")}`]: answers(shared)
+    })
+
+    expect(await screenSetupCommand(machine.deps)).toBe(0)
+    expect(machine.errors).toEqual([])
+  })
+
+  it("passes on why the screen's install failed", async () => {
+    const failure =
+      "Installing packages failed:\nE: Unable to locate package tigervnc-scraping-server"
+    const machine = world({
+      [`GET ${url()}`]: answers(withScreen({ ...loggedIn, missing, sudo: "passwordless" })),
+      [`POST ${url("/screen/packages")}`]: answers(withScreen({ ...loggedIn, missing, failure }))
+    })
+
+    expect(await screenSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors).toEqual([
+      "Installing packages failed:\n    | E: Unable to locate package tigervnc-scraping-server"
+    ])
+    expect(machine.httpCalls(`POST ${url("/screen")}`)).toBe(0)
+  })
+
   it("runs the install itself with sudo when the account needs a password, from its own package list", async () => {
-    const needsPassword = { ...withScreen({ ...loggedIn, missing }), sudo: "password" as const }
+    const needsPassword = withScreen({ ...loggedIn, missing, sudo: "password" })
     const machine = world({
       [`GET ${url()}`]: answers(needsPassword, withScreen(loggedIn)),
       [`POST ${url("/screen")}`]: answers(shared)
@@ -87,6 +119,32 @@ describe("codevisor desktop setup --screen", () => {
     expect(machine.logs).toContain(`    sudo ${aptInstallForTheScreen}`)
     expect(machine.httpCalls(`POST ${url("/screen/packages")}`)).toBe(0)
   })
+
+  it("names the screen's own command to run again when an administrator has to install", async () => {
+    const machine = world(
+      { [`GET ${url()}`]: answers(withScreen({ ...loggedIn, missing, sudo: "none" })) },
+      { interactive: false }
+    )
+
+    expect(await screenSetupCommand(machine.deps)).toBe(1)
+    expect(machine.errors[0]).toBe("Installing packages needs an administrator. Ask one to run:")
+    expect(machine.errors.at(-1)).toBe("then run `codevisor desktop setup --screen` again.")
+  })
+
+  it.each(["wayland", "wlroots"])(
+    "refuses a %s session before installing anything",
+    async (session) => {
+      const machine = world({
+        [`GET ${url()}`]: answers(withScreen({ session, missing, sudo: "passwordless" }))
+      })
+
+      expect(await screenSetupCommand(machine.deps)).toBe(1)
+      expect(machine.errors).toEqual([
+        "This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
+      ])
+      expect(machine.httpCalls(`POST ${url("/screen/packages")}`)).toBe(0)
+    }
+  )
 
   it("passes on why the screen isn't shared after all", async () => {
     const problem = "x0vncserver didn't open its socket (see /home/codevisor/screen.log)"

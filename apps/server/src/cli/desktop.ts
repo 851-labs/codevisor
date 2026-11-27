@@ -30,7 +30,13 @@ export interface AdministratorStep {
   readonly what: string
   readonly path: string
   readonly commands: ReadonlyArray<RootCommand>
+  readonly rerun?: string
+  readonly progress?: (status: DesktopStatus) => StepProgress | undefined
 }
+
+export type StepProgress = Pick<DesktopStatus, "sudo" | "busy" | "failure">
+
+const setupCommand = "codevisor desktop setup"
 
 export const quickMs = 30_000
 export const startMs = 2 * 60 * 1000
@@ -201,7 +207,10 @@ const answeredScreen = (screen: ScreenStatus): ScreenStatus => ({
   ...(screen.display !== undefined && displayName.test(screen.display)
     ? { display: screen.display }
     : {}),
-  ...(screen.problem === undefined ? {} : { problem: printable(screen.problem) })
+  ...(screen.sudo === undefined ? {} : { sudo: screen.sudo }),
+  ...(screen.problem === undefined ? {} : { problem: printable(screen.problem) }),
+  ...(screen.busy === undefined ? {} : { busy: printable(screen.busy) }),
+  ...(screen.failure === undefined ? {} : { failure: printable(screen.failure) })
 })
 
 const lingerCommand = (status: DesktopStatus): string =>
@@ -369,11 +378,14 @@ const isSomeoneElses = (status: DesktopStatus): boolean => status.unmanaged === 
 const whenTheServerIsDone = async (
   deps: DesktopCliDeps,
   server: DesktopServer,
-  begun: DesktopStatus | undefined
+  begun: DesktopStatus | undefined,
+  step: AdministratorStep
 ): Promise<DesktopStatus | undefined> => {
+  const progress = step.progress ?? ofTheDesktop
   let status = begun
   let unanswered = 0
-  for (let poll = 0; status?.busy !== undefined && poll < busyPolls; poll += 1) {
+  const isBusy = (): boolean => status !== undefined && progress(status)?.busy !== undefined
+  for (let poll = 0; isBusy() && poll < busyPolls; poll += 1) {
     await deps.sleep(busyPollMs)
     const latest = await server.peek()
     unanswered = latest === undefined ? unanswered + 1 : 0
@@ -383,32 +395,38 @@ const whenTheServerIsDone = async (
   }
   if (status === undefined) return undefined
 
-  const problem = status.busy === undefined ? status.failure : stillBusy(status.busy)
+  const reached = progress(status)
+  const problem =
+    reached?.busy === undefined ? reached?.failure : stillBusy(reached.busy, rerunOf(step))
   if (problem === undefined) return status
 
   deps.error(problem)
   return undefined
 }
 
-const stillBusy = (what: string): string =>
-  `${what} is still going on. Run \`codevisor desktop setup\` again when it is done.`
+const ofTheDesktop = (status: DesktopStatus): StepProgress => status
+
+const rerunOf = (step: AdministratorStep): string => step.rerun ?? setupCommand
+
+const stillBusy = (what: string, rerun: string): string =>
+  `${what} is still going on. Run \`${rerun}\` again when it is done.`
 
 export const asAdministrator = async (
   deps: DesktopCliDeps,
   server: DesktopServer,
   status: DesktopStatus,
-  step: AdministratorStep,
-  serverMs: number = startMs
+  step: AdministratorStep
 ): Promise<DesktopStatus | undefined> => {
-  if (status.sudo === "passwordless")
-    return whenTheServerIsDone(deps, server, await server.ask("POST", step.path, serverMs))
+  const sudo = (step.progress ?? ofTheDesktop)(status)?.sudo
+  if (sudo === "passwordless")
+    return whenTheServerIsDone(deps, server, await server.ask("POST", step.path, startMs), step)
 
   const prefix = deps.isRoot ? [] : ["sudo"]
-  const canRunHere = deps.isRoot || (status.sudo === "password" && deps.isInteractive)
+  const canRunHere = deps.isRoot || (sudo === "password" && deps.isInteractive)
   if (!canRunHere) {
     deps.error(`${step.what} needs an administrator. Ask one to run:`)
     for (const command of step.commands) deps.error(`  ${shellText(command)}`)
-    deps.error("then run `codevisor desktop setup` again.")
+    deps.error(`then run \`${rerunOf(step)}\` again.`)
     return undefined
   }
 

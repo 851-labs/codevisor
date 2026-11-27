@@ -1,4 +1,5 @@
 export interface VNCRelay {
+  readonly screen?: boolean
   readonly configured: string
   readonly dialled: string
   readonly close: (reason: string) => void

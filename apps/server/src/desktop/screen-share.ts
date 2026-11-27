@@ -14,7 +14,7 @@ import {
   screenSetup
 } from "../routes/screen-sharing-vnc.js"
 import { HttpFailure } from "../server-context.js"
-import { keepOwnFoldersPrivate, runtimeFolder } from "./desktop-layout.js"
+import { runtimeFolder } from "./desktop-layout.js"
 import type { LocateSocket } from "./desktop-liveness.js"
 import {
   installPlan,
@@ -25,7 +25,14 @@ import {
   sudoKind
 } from "./desktop-packages.js"
 import type { DesktopSystem } from "./desktop-system.js"
-import { holdsUnixSocket, tcpPortsListenedOnBy } from "./listening-ports.js"
+import type { RootCommand } from "./old-desktop.js"
+import {
+  asAssignments,
+  type RunningHelper,
+  screenHelpers,
+  type ShownScreen,
+  type TcpPortsOf
+} from "./screen-helper.js"
 import {
   accountsAtTheScreen,
   type GraphicalSession,
@@ -47,44 +54,42 @@ export interface ScreenShareOptions {
   readonly logsDir: string
   readonly changed: () => void
   readonly locate?: LocateSocket
-  readonly tcpPortsOf?: (helper: number, socket: string) => ReadonlyArray<number> | undefined
+  readonly tcpPortsOf?: TcpPortsOf
   readonly now?: () => number
 }
 
-type X11Session = GraphicalSession & { readonly display: string }
+type X11Session = GraphicalSession & ShownScreen
 
-const isOnX11 = (session: GraphicalSession): session is X11Session =>
-  session.kind === "x11" && session.display !== undefined
-
-interface Helper {
-  readonly pid: number
-  readonly display: string | undefined
-}
-
-const socketPollMs = 100
-const socketPolls = 50
-const stopPolls = 50
-const portSettleMs = 1000
 const notifyEveryMs = 30_000
 const retryAfterMs = 30_000
+const installing = "Installing packages"
 const notRunning = "the helper that shares the screen isn't running"
 const noScraper = "x0vncserver (TigerVNC's server for an existing screen) isn't installed"
-const notX11 =
+
+export const waylandIsNotShared =
   "This account's session at the screen runs on Wayland, and Codevisor can only share X11 sessions so far."
+
+export const someoneElseIsThere = (accounts: ReadonlyArray<string>, account: string): string =>
+  `${accounts.join(" and ")} ${accounts.length === 1 ? "is" : "are"} logged in at this machine's screen, and Codevisor runs as ${account} here, so it can't share that screen. Set up a separate desktop instead: codevisor desktop setup`
 
 export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   const { system, dataDir, changed } = options
   const locate = options.locate ?? privateSocket
-  const tcpPortsOf = options.tcpPortsOf ?? tcpPortsOfTheHelper
   const now = options.now ?? Date.now
   const configPath = join(dataDir, SCREEN_SHARING_CONFIG_FILE)
-  const pidFile = join(dataDir, "screen.pid")
-  const logFile = join(options.logsDir, "screen.log")
-  const socket = join(runtimeFolder(system), "codevisor-screen.sock")
+  const helpers = screenHelpers({
+    system,
+    pidFile: join(dataDir, "screen.pid"),
+    logFile: join(options.logsDir, "screen.log"),
+    locate,
+    tcpPortsOf: options.tcpPortsOf
+  })
   let seenAt: number | undefined
   let problem: string | undefined
   let retryAt: number | undefined
   let notifiedAt: number | undefined
+  let busy: string | undefined
+  let failure: string | undefined
   let last: Promise<unknown> = Promise.resolve()
 
   const oneAtATime = <Result>(work: () => Promise<Result>): Promise<Result> => {
@@ -93,7 +98,10 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return run
   }
 
-  const isSetUp = (): boolean => screenSetup(system.readText(configPath)) !== undefined
+  const recordedSocket = (): string | undefined => screenSetup(system.readText(configPath))?.socket
+
+  const socketToUse = (): string =>
+    recordedSocket() ?? join(runtimeFolder(system), "codevisor-screen.sock")
 
   const virtualDisplay = (): string | undefined => {
     const setup = desktopSetup(system.readText(configPath) ?? "")
@@ -101,7 +109,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return display === undefined ? undefined : `:${display}`
   }
 
-  const session = (): GraphicalSession | undefined => {
+  const sessionByItsProcesses = (): GraphicalSession | undefined => {
     const found = ownGraphicalSession(system, {
       ignoreDisplay: virtualDisplay(),
       lookFirstAt: seenAt
@@ -110,120 +118,102 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return found
   }
 
-  const helper = (): Helper | undefined => {
-    const pid = Number(system.readText(pidFile)?.trim() ?? "")
-    if (!Number.isInteger(pid) || pid <= 0 || !system.processAlive(pid)) return undefined
+  const session = async (): Promise<GraphicalSession | undefined> => {
+    const found = sessionByItsProcesses()
+    if (found === undefined) return undefined
 
-    const words = (system.readText(`/proc/${pid}/cmdline`) ?? "").split("\0")
-    if (!words.includes(socket)) return undefined
-
-    return { pid, display: words[words.indexOf("-display") + 1] }
+    const loggedIn = await accountsAtTheScreen(system)
+    return loggedIn === undefined || loggedIn.includes(system.account) ? found : undefined
   }
 
-  const stop = async (running: Helper): Promise<void> => {
-    system.terminate(running.pid)
-    for (let poll = 0; poll < stopPolls && system.processAlive(running.pid); poll += 1)
-      await system.sleep(socketPollMs)
-    forgetTheHelper()
-    changed()
-  }
+  const others = async (): Promise<ReadonlyArray<string>> =>
+    ((await accountsAtTheScreen(system)) ?? []).filter((account) => account !== system.account)
 
-  const forgetTheHelper = (): void => {
-    system.remove(pidFile)
-    system.remove(socket)
-  }
-
-  const socketOpens = async (): Promise<boolean> => {
-    for (let poll = 0; poll < socketPolls; poll += 1) {
-      if (locate(socket).problem === undefined) return true
-
-      await system.sleep(socketPollMs)
-    }
-    return false
-  }
-
-  const whyItMayNotBeShared = async (pid: number): Promise<string | undefined> => {
-    if (!(await socketOpens())) return `x0vncserver didn't open its socket (see ${logFile})`
-
-    const first = tcpPortsOf(pid, socket)
-    await system.sleep(portSettleMs)
-    const ports = [...(first ?? []), ...(tcpPortsOf(pid, socket) ?? [])]
-    if (first === undefined) return "couldn't check that x0vncserver stays off the network"
-    if (ports.length > 0)
-      return `x0vncserver listens on TCP port ${ports[0]}, and the screen must only be shared on its socket`
-
-    return undefined
-  }
-
-  const startHelper = async (shown: X11Session, scraper: string): Promise<string | undefined> => {
-    keepOwnFoldersPrivate(system, { socket })
-    forgetTheHelper()
-    const command = [scraper, ...scraperArguments(shown.display, socket)]
-    const pid = system.spawnDetached("env", [...asAssignments(shown.env), ...command], logFile)
-    if (pid === undefined) return "x0vncserver couldn't be started"
-
-    system.writeText(pidFile, `${pid}\n`)
-    const why = await whyItMayNotBeShared(pid)
-    if (why !== undefined) await stop({ pid, display: shown.display })
-    return why
-  }
-
-  const start = async (found: GraphicalSession): Promise<void> => {
-    if (!isOnX11(found)) {
-      problem = notX11
-      return
-    }
-
-    const scraper = await screenScraper(system)
-    problem = noScraper
-    if (scraper !== undefined) problem = await startHelper(found, scraper)
+  const start = async (socket: string, found: GraphicalSession): Promise<void> => {
+    problem = await whyItDidNotStart(socket, found)
     retryAt = problem === undefined ? undefined : now() + retryAfterMs
     changed()
   }
 
-  const follow = async (): Promise<void> => {
-    const running = helper()
-    const found = isSetUp() ? session() : undefined
-    if (running !== undefined && showsTheScreenOf(running, found)) return
-    if (running !== undefined) await stop(running)
-    if (found === undefined) return nothingToShare()
-    if (retryAt === undefined || now() >= retryAt) await start(found)
+  const whyItDidNotStart = async (
+    socket: string,
+    found: GraphicalSession
+  ): Promise<string | undefined> => {
+    if (!isOnX11(found)) return waylandIsNotShared
+
+    const scraper = await screenScraper(system)
+    return scraper === undefined ? noScraper : helpers.start(socket, found, scraper)
   }
 
-  const nothingToShare = (): void => {
-    problem = undefined
-    retryAt = undefined
-    if (!system.exists(socket) && !system.exists(pidFile)) return
-
-    forgetTheHelper()
+  const stop = async (running: RunningHelper, socket: string): Promise<void> => {
+    await helpers.stop(running, socket)
     changed()
   }
 
-  const others = async (): Promise<ReadonlyArray<string>> =>
-    (await accountsAtTheScreen(system)).filter((account) => account !== system.account)
+  const nothingToShare = (socket: string): void => {
+    problem = undefined
+    retryAt = undefined
+    if (helpers.forget(socket)) changed()
+  }
 
-  const status = async (): Promise<ScreenStatus> => {
-    const found = session()
-    const seen = {
-      missing: await missingScreenPrograms(system),
+  const follow = async (): Promise<void> => {
+    const recorded = recordedSocket()
+    const socket = recorded ?? socketToUse()
+    const running = helpers.running(socket)
+    if (running !== undefined && recorded !== undefined && isStillShown(running)) return
+    if (running !== undefined) await stop(running, socket)
+    if (recorded === undefined) return nothingToShare(socket)
+    if (retryAt !== undefined && now() < retryAt) return
+
+    const found = await session()
+    if (found === undefined) return nothingToShare(socket)
+
+    await start(socket, found)
+  }
+
+  const isStillShown = (running: RunningHelper): boolean => {
+    const found = sessionByItsProcesses()
+    return found?.kind === "x11" && running.display === found.display
+  }
+
+  const sudoForAnInstall = async (missing: ReadonlyArray<string>) => {
+    if (missing.length === 0) return {}
+
+    return { sudo: await sudoKind(system) }
+  }
+
+  const seen = async (found: GraphicalSession | undefined) => {
+    const missing = await missingScreenPrograms(system)
+    if (missing.length === 0) failure = undefined
+    return {
+      missing,
       others: await others(),
+      ...(await sudoForAnInstall(missing)),
+      ...(busy === undefined ? {} : { busy }),
+      ...(failure === undefined ? {} : { failure }),
       ...(found === undefined ? {} : { session: found.kind }),
       ...(found?.display === undefined ? {} : { display: found.display })
     }
-    if (!isSetUp()) return { state: "none", ...seen }
-    if (helper() !== undefined && locate(socket).problem === undefined)
-      return { state: "running", ...seen }
-    if (found === undefined) return { state: "waiting", ...seen }
+  }
 
-    return { state: "stopped", ...seen, problem: problem ?? notRunning }
+  const status = async (): Promise<ScreenStatus> => {
+    const found = await session()
+    const about = await seen(found)
+    const socket = recordedSocket()
+    if (socket === undefined) return { state: "none", ...about }
+    if (helpers.running(socket) !== undefined && locate(socket).problem === undefined)
+      return { state: "running", ...about }
+    if (found === undefined) return { state: "waiting", ...about }
+
+    return { state: "stopped", ...about, problem: problem ?? notRunning }
   }
 
   const refuseWhatCannotBeShared = async (): Promise<void> => {
-    const found = session()
+    const found = await session()
     const there = await others()
     if (found === undefined && there.length > 0)
       throw new HttpFailure(409, someoneElseIsThere(there, system.account))
-    if (found !== undefined && !isOnX11(found)) throw new HttpFailure(409, notX11)
+    if (found !== undefined && !isOnX11(found)) throw new HttpFailure(409, waylandIsNotShared)
   }
 
   const setUp = async (): Promise<ScreenStatus> => {
@@ -235,7 +225,11 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
         `The screen can't be shared until these are installed: ${missing.join(", ")}`
       )
 
-    const entry = { id: SCREEN_ENTRY, vnc: { socket, name: "Screen" }, service: "server" }
+    const entry = {
+      id: SCREEN_ENTRY,
+      vnc: { socket: socketToUse(), name: "Screen" },
+      service: "server"
+    }
     system.writeText(configPath, withDisplayEntry(system.readText(configPath), entry))
     retryAt = undefined
     await follow()
@@ -244,29 +238,46 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   }
 
   const remove = async (): Promise<ScreenStatus> => {
+    const socket = socketToUse()
+    const running = helpers.running(socket)
     const rest = withoutDisplayEntry(system.readText(configPath), SCREEN_ENTRY)
     if (rest === undefined) system.remove(configPath)
     else system.writeText(configPath, rest)
-    await follow()
+    if (running !== undefined) await helpers.stop(running, socket)
+    nothingToShare(socket)
     changed()
     return status()
+  }
+
+  const installInTheBackground = (commands: ReadonlyArray<RootCommand>): void => {
+    busy = installing
+    failure = undefined
+    void runAsRoot(system, commands)
+      .then((ran) => {
+        if (!ran.ok) failure = `${installing} failed:\n${ran.output}`
+      })
+      .catch((cause: unknown) => {
+        failure = cause instanceof Error ? cause.message : String(cause)
+      })
+      .finally(() => {
+        busy = undefined
+      })
   }
 
   const installPackages = async (): Promise<ScreenStatus> => {
     const plan = await installPlan(system, osRelease(system))
     if (plan === undefined)
       throw new HttpFailure(501, "Codevisor doesn't know how to install packages on this system")
+    if (busy !== undefined) return status()
     if ((await sudoKind(system)) !== "passwordless")
-      throw new HttpFailure(403, "Installing packages needs an administrator on this machine")
+      throw new HttpFailure(403, `${installing} needs an administrator on this machine`)
 
-    const ran = await runAsRoot(system, plan.screenCommands)
-    if (!ran.ok) throw new HttpFailure(502, `Installing packages failed:\n${ran.output}`)
-
+    installInTheBackground(plan.screenCommands)
     return status()
   }
 
   const viewerJoined = (): void => {
-    const found = session()
+    const found = sessionByItsProcesses()
     const isTooSoon = notifiedAt !== undefined && now() - notifiedAt < notifyEveryMs
     if (found === undefined || isTooSoon) return
 
@@ -278,7 +289,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
 
   return {
     status,
-    installPackages: () => oneAtATime(installPackages),
+    installPackages,
     setUp: () => oneAtATime(setUp),
     remove: () => oneAtATime(remove),
     follow: () => oneAtATime(follow),
@@ -288,29 +299,5 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
 
 const notice = ["Codevisor", "Someone started viewing this screen."]
 
-const showsTheScreenOf = (running: Helper, found: GraphicalSession | undefined): boolean =>
-  found?.kind === "x11" && running.display === found.display
-
-export const someoneElseIsThere = (accounts: ReadonlyArray<string>, account: string): string =>
-  `${accounts.join(" and ")} ${accounts.length === 1 ? "is" : "are"} logged in at this machine's screen, and Codevisor runs as ${account} here, so it can't share that screen. Set up a separate desktop instead: codevisor desktop setup`
-
-const asAssignments = (env: Readonly<Record<string, string>>): ReadonlyArray<string> =>
-  Object.entries(env).map(([name, value]) => `${name}=${value}`)
-
-const scraperArguments = (display: string, socket: string): ReadonlyArray<string> => [
-  "-display",
-  display,
-  "-rfbunixpath",
-  socket,
-  "-rfbunixmode",
-  "0600",
-  "-rfbport",
-  "-1",
-  "-localhost",
-  "-SecurityTypes",
-  "None",
-  "-AcceptSetDesktopSize=0"
-]
-
-const tcpPortsOfTheHelper = (helper: number, socket: string): ReadonlyArray<number> | undefined =>
-  holdsUnixSocket(helper, socket) ? tcpPortsListenedOnBy(helper) : undefined
+const isOnX11 = (session: GraphicalSession): session is X11Session =>
+  session.kind === "x11" && session.display !== undefined

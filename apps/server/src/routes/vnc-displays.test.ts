@@ -26,14 +26,19 @@ const identity = {
   app: { key: "a".repeat(64), name: "Studio Mac" }
 }
 
-const nobodyThere = "Nobody is logged in at this machine's screen, so there is nothing to show."
+const notShown =
+  "This machine's screen isn't being shared right now: nobody is logged in at it, or its session can't be shared."
 const greeting = Buffer.from("RFB 003.008\n", "latin1")
 const handshake = Buffer.concat([greeting, Buffer.from([1, 1])])
 const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 97])
 const resize = Buffer.concat([Buffer.from([251, 0, 4, 0, 3, 0, 1, 0]), Buffer.alloc(16, 5)])
 
-const machineWith = async (sockets: { desktop?: string; screen?: string }) => {
-  const dataDir = privateDirectory()
+interface Sockets {
+  readonly desktop?: string
+  readonly screen?: string
+}
+
+const share = (dataDir: string, sockets: Sockets): void => {
   const displays = [
     ...(sockets.desktop === undefined
       ? []
@@ -43,6 +48,11 @@ const machineWith = async (sockets: { desktop?: string; screen?: string }) => {
       : [{ id: "screen", vnc: { socket: sockets.screen, name: "Screen" }, service: "server" }])
   ]
   writeFileSync(join(dataDir, SCREEN_SHARING_CONFIG_FILE), JSON.stringify({ displays }))
+}
+
+const machineWith = async (sockets: Sockets) => {
+  const dataDir = privateDirectory()
+  share(dataDir, sockets)
   const joined: ScreenSharingVNCConfig[] = []
   const desktops = fileVNCDesktops(dataDir, {
     viewerJoined: (display) => void joined.push(display)
@@ -61,7 +71,14 @@ const machineWith = async (sockets: { desktop?: string; screen?: string }) => {
       `ws://127.0.0.1:${server.port}/v1/screen-sharing/vnc/socket?displayId=${displayId}`
     )
   const info = async (): Promise<unknown> => (await jsonRequest(server, "/v1/info")).body
-  return { capabilities, open, info, joined, desktops }
+  return {
+    capabilities,
+    open,
+    info,
+    joined,
+    desktops,
+    share: (now: Sockets) => share(dataDir, now)
+  }
 }
 
 const hungUp = async (socket: WebSocket): Promise<void> => {
@@ -112,7 +129,7 @@ describe("a Linux machine with a desktop and a real screen", () => {
   it("says nobody is logged in when the screen is all it shares", async () => {
     const machine = await machineWith({ screen: join(privateDirectory(), "codevisor-screen.sock") })
 
-    expect(await machine.capabilities()).toMatchObject({ status: "failed", message: nobodyThere })
+    expect(await machine.capabilities()).toMatchObject({ status: "failed", message: notShown })
     expect(await machine.info()).toMatchObject(sharesAScreen)
   })
 
@@ -155,6 +172,21 @@ describe("a Linux machine with a desktop and a real screen", () => {
     rmSync(screen.socket)
     machine.desktops.relays?.recheck()
 
-    expect(await ended).toEqual({ code: 1011, reason: nobodyThere })
+    expect(await ended).toEqual({ code: 1011, reason: notShown })
+  })
+
+  it("tells a viewer of the screen that it is no longer shared when it is removed", async () => {
+    const [desktop, screen] = [await fakeVNC(), await fakeVNC()]
+    const machine = await machineWith({ desktop: desktop.socket, screen: screen.socket })
+    const viewer = await connected(machine.open("vnc:screen"))
+    const ended = closure(viewer)
+
+    machine.share({ desktop: desktop.socket })
+    machine.desktops.relays?.recheck()
+
+    expect(await ended).toEqual({
+      code: 1011,
+      reason: "This machine's screen is no longer shared."
+    })
   })
 })

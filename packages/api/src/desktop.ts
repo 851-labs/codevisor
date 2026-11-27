@@ -19,7 +19,10 @@ export const ScreenStatus = Schema.Struct({
   session: Schema.optional(Schema.String),
   display: Schema.optional(Schema.String),
   problem: Schema.optional(Schema.String),
+  busy: Schema.optional(Schema.String),
+  failure: Schema.optional(Schema.String),
   missing: Schema.Array(Schema.String),
+  sudo: Schema.optional(DesktopSudo),
   others: Schema.Array(Schema.String)
 })
 export type ScreenStatus = typeof ScreenStatus.Type

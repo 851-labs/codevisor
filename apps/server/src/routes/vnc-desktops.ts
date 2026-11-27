@@ -61,9 +61,11 @@ export const fileVNCDesktops = (dataDir: string, options: VNCDesktopsOptions = {
   }
 }
 
-const withdrawn = "The desktop on this machine was removed."
+const desktopWithdrawn = "The desktop on this machine was removed."
+const screenWithdrawn = "This machine's screen is no longer shared."
 
 const whyNotShared = (relay: VNCRelay, desktop: VNCDesktop | undefined): string | undefined => {
+  const withdrawn = relay.screen === true ? screenWithdrawn : desktopWithdrawn
   const display = desktop?.displays.find((shared) => shared.socket === relay.configured)
   if (display === undefined) return withdrawn
 

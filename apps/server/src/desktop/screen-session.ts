@@ -31,9 +31,11 @@ export const ownGraphicalSession = (
 
 export const accountsAtTheScreen = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string>> => {
+): Promise<ReadonlyArray<string> | undefined> => {
   const seated = await seatedAccounts(system)
-  return seated.length > 0 ? seated : loggedInOnADisplay(system)
+  if (seated !== undefined && seated.length > 0) return seated
+
+  return (await loggedInOnADisplay(system)) ?? seated
 }
 
 const carried = [
@@ -106,9 +108,9 @@ const environmentOf = (text: string | undefined): Readonly<Record<string, string
 
 const seatedAccounts = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string>> => {
+): Promise<ReadonlyArray<string> | undefined> => {
   const listed = await system.run("loginctl", ["list-sessions", "--no-legend"])
-  if (listed.code !== 0) return []
+  if (listed.code !== 0) return undefined
 
   const ids = listed.output
     .split("\n")
@@ -132,7 +134,9 @@ const seatedAccountOf = async (
     "-p",
     "Class",
     "-p",
-    "Remote"
+    "Remote",
+    "-p",
+    "State"
   ])
   const fields = new Map(
     shown.output.split("\n").map((line) => {
@@ -144,15 +148,16 @@ const seatedAccountOf = async (
     shown.code === 0 &&
     (fields.get("Seat") ?? "") !== "" &&
     fields.get("Class") === "user" &&
-    fields.get("Remote") !== "yes"
+    fields.get("Remote") !== "yes" &&
+    fields.get("State") !== "closing"
   return isAtTheScreen ? fields.get("Name") : undefined
 }
 
 const loggedInOnADisplay = async (
   system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<string>> => {
+): Promise<ReadonlyArray<string> | undefined> => {
   const listed = await system.run("who", [])
-  if (listed.code !== 0) return []
+  if (listed.code !== 0) return undefined
 
   return unique(
     listed.output

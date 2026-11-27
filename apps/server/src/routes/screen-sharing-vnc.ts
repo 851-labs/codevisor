@@ -132,15 +132,15 @@ export const socketProblemMessages: Record<PrivateSocketProblem, string> = {
   exposed: "Other accounts on this machine can reach its desktop, so Codevisor won't share it."
 }
 
-const nobodyAtTheScreen =
-  "Nobody is logged in at this machine's screen, so there is nothing to show."
+const screenIsNotShown =
+  "This machine's screen isn't being shared right now: nobody is logged in at it, or its session can't be shared."
 
 export const whyNotReachable = (
   config: ScreenSharingVNCConfig,
   problem: PrivateSocketProblem
 ): string =>
   config.screen === true && problem === "missing"
-    ? nobodyAtTheScreen
+    ? screenIsNotShown
     : socketProblemMessages[problem]
 
 export const vncScreenSharing =
@@ -329,6 +329,7 @@ export const spliceVNCSocket = (
       upstream.destroy()
     }
     const leaveRelays = options.relays?.add({
+      screen: config.screen === true,
       configured: config.socket,
       dialled: located.path,
       close: (reason) => {

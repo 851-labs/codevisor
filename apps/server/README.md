@@ -116,14 +116,15 @@ A Linux machine where someone is logged in at the monitor can list two displays,
 | Another account                             | Refuses in one sentence and offers the virtual desktop: "alice is logged in at this machine's screen, and Codevisor runs as codevisor here, so it can't share that screen. Set up a separate desktop instead: codevisor desktop setup" |
 | The server's own account, on Wayland        | Refuses: only X11 sessions can be shared so far. Sway and Hyprland, and GNOME and KDE on Wayland, are later steps.                                                                                                                     |
 
-**How the session is found** (`src/desktop/screen-session.ts`). The server looks at the processes of its own account for one that has a seat (`XDG_SEAT`, which a login at the machine has and a login over the network doesn't) and a `DISPLAY`, and takes the display, the cookie file and the session bus from that process's environment. Its own virtual desktop and anything started with that desktop's display are left out. Who else is logged in at the screen comes from logind's seated sessions, and from `who` on a machine where logind has none.
+**How the session is found** (`src/desktop/screen-session.ts`). The server looks at the processes of its own account for one that has a seat (`XDG_SEAT`, which a login at the machine has and a login over the network doesn't) and a `DISPLAY`, and takes the display, the cookie file and the session bus from that process's environment. Its own virtual desktop and anything started with that desktop's display are left out. A process can outlive its session and keep those values, so before starting to share, the server also checks that its account is among those logged in at the screen: logind's seated sessions that aren't ending, or `who` on a machine where logind has none. The same list says who else is there.
 
 **How it is shared** (`src/desktop/screen-share.ts`). There is no extra service. While the screen is set up, the server checks every three seconds:
 
 - When its account's session appears, it starts TigerVNC's `x0vncserver` (`X0tigervnc` on Debian and Ubuntu) against that display, on `codevisor-screen.sock` in the account's runtime folder: mode 0600, no TCP port. The same checks as for Xvnc apply: the socket and the folders above it must be private, and a helper that listens on a TCP port is stopped and reported.
-- When the session ends, the helper goes with the X server; the server removes what it left behind, and a viewer that is connected is disconnected with "Nobody is logged in at this machine's screen, so there is nothing to show."
+- When the session ends, the helper goes with the X server; the server removes what it left behind, and a viewer that is connected is disconnected with "This machine's screen isn't being shared right now: nobody is logged in at it, or its session can't be shared."
 - Nothing runs at the login screen, and nothing is shared from it.
-- A helper that fails to start is tried again after 30 seconds.
+- A helper that fails to start, or whose ports can't be checked, is stopped and tried again after 30 seconds.
+- The socket's path is the one recorded when the screen was set up, so a server started later with another runtime folder keeps sharing where viewers look.
 
 A server restart may take the helper with it (under systemd it does). The new server picks up a helper that is still running and starts one otherwise; viewers are cut by a server restart either way, because the relay lives in the server.
 
