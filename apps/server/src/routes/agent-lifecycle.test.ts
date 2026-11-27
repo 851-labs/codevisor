@@ -129,25 +129,19 @@ describe("agent lifecycle routes", () => {
     expect((await jsonRequest(server, "/v1/agents?state=busy")).status).toBe(400)
   })
 
-  it("clears an archived agent's background tasks so it doesn't read as working", async () => {
+  it("clears an archived agent's background tasks", async () => {
     await withWorktreesRoot(async () => {
-      const { server, services, worktree, agentIn, archiveWorkspaceOf } = await gitProject()
+      const { services, worktree, agentIn, archiveWorkspaceOf } = await gitProject()
       const agentId = await agentIn((await worktree()).name)
       await run(
         services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell, subagent] })
       )
-      expect((await jsonRequest(server, `/v1/agents/${agentId}`)).body).toMatchObject({
-        state: "working"
-      })
 
       await archiveWorkspaceOf(agentId)
 
       expect(
         (await run(services.db.getTranscriptPage(agentId, undefined, 1))).backgroundTasks
       ).toEqual([])
-      expect((await jsonRequest(server, "/v1/agents")).body).toMatchObject({
-        items: [{ agentId, state: "idle" }]
-      })
     })
   })
 

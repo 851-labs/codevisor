@@ -3,7 +3,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
-import { run, tempDatabase } from "./test-support.js"
+import { goalUpdate, run, tempDatabase } from "./test-support.js"
 
 const turn = (turnId: string, ended: Record<string, unknown>) => [
   { initiatedBy: "user", turnId, turnState: "started" },
@@ -185,13 +185,13 @@ describe("@codevisor/db", () => {
     await Effect.runPromise(db.close)
   })
 
-  it("holds a finished turn while a subagent runs and settles it exactly once", async () => {
+  it("holds a finished turn while a goal is active and settles it exactly once", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     onTestFinished(() => {
       vi.useRealTimers()
     })
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/subagent-hold" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/goal-hold" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
     await run(
@@ -201,13 +201,7 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -222,7 +216,7 @@ describe("@codevisor/db", () => {
       sidebarState: "inProgress"
     })
 
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",
@@ -235,13 +229,7 @@ describe("@codevisor/db", () => {
       sidebarState: "inProgress"
     })
 
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-2", description: "Verify", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",
@@ -251,7 +239,7 @@ describe("@codevisor/db", () => {
       })
     )
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
 
     vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS - 1)
     expect((await run(db.settleSessionAttention(session.id))).settled).toBe(false)
@@ -280,13 +268,7 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
-    await run(
-      db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
-        ]
-      })
-    )
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("active")))
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -295,7 +277,7 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    await run(db.appendEvent("session.updated", session.id, goalUpdate("complete")))
 
     const early = await run(db.settleSessionAttention(session.id))
     expect(early.settled).toBe(false)

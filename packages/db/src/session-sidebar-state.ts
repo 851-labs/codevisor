@@ -1,17 +1,13 @@
-import { SessionSidebarState, type BackgroundTask } from "@codevisor/api"
+import { SessionSidebarState } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { Schema } from "effect"
 
-import { backgroundTasksFromRaw } from "./event-payloads.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 
 const sidebarInputRows = rowReader({
   pending_question: nullable(text),
-  background_tasks: text,
   attention_revision: integer,
   turn_active: integer,
-  runtime_state: text,
-  has_runtime_state: integer,
   pending_plan_approval: integer,
   errored: integer,
   pending_finish: integer,
@@ -21,8 +17,6 @@ const sidebarInputRows = rowReader({
 })
 
 const sidebarStateRows = rowReader({ sidebar_state: Schema.is(SessionSidebarState) })
-
-export const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
 
 const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
   return sidebarInputRows.one(sqlite.prepare(sidebarSql.inputs).get(sessionId))
@@ -46,15 +40,7 @@ const needsUser = (state: SidebarInputs): boolean =>
   state.pending_question !== null || state.pending_plan_approval === 1
 
 const isWorking = (state: SidebarInputs): boolean =>
-  hasTurnInFlight(state) || isHeldBySubagent(state)
-
-const hasTurnInFlight = (state: SidebarInputs): boolean =>
-  state.turn_active === 1 ||
-  state.pending_finish === 1 ||
-  (state.has_runtime_state === 1 && state.runtime_state === "running")
-
-const isHeldBySubagent = (state: SidebarInputs): boolean =>
-  backgroundTasksFromRaw(state.background_tasks).some(holdsInProgress)
+  state.turn_active === 1 || state.pending_finish === 1
 
 export const projectSessionSidebarState = (
   sqlite: Database.Database,
@@ -71,11 +57,9 @@ const storedSidebarState = (sqlite: Database.Database, sessionId: string): Sessi
   sidebarStateRows.one(sqlite.prepare(sidebarSql.current).get(sessionId)).sidebar_state
 
 const sidebarSql = {
-  inputs: `select s.pending_question, s.background_tasks,
+  inputs: `select s.pending_question,
          coalesce(sa.attention_revision, 0) as attention_revision,
          coalesce(sa.turn_active, 0) as turn_active,
-         coalesce(sa.runtime_state, 'idle') as runtime_state,
-         coalesce(sa.has_runtime_state, 0) as has_runtime_state,
          coalesce(sa.pending_plan_approval, 0) as pending_plan_approval,
          coalesce(sa.errored, 0) as errored,
          coalesce(sa.pending_finish, 0) as pending_finish,

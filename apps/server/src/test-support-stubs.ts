@@ -1,10 +1,22 @@
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
-import type { Harness, NativeMcpScan, SkillsList } from "@codevisor/api"
+import type { GoalStatus, Harness, NativeMcpScan, SkillsList } from "@codevisor/api"
 import { SkillsError } from "@codevisor/skills"
 import { Effect } from "effect"
 
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { UpdateRun } from "./update-run.js"
+
+export const goalUpdate = (status: GoalStatus) => ({
+  goal: {
+    objective: "Ship it",
+    status,
+    tokenBudget: null,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  }
+})
 
 export const nativeMcpScan: NativeMcpScan = {
   candidates: [

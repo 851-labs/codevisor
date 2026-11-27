@@ -8,11 +8,11 @@ import {
 } from "./bot-conversation-attention.js"
 import { sessionGoalSnapshot } from "./chat-items.js"
 import type { JsonRecord } from "./event-payloads.js"
-import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"
+import { conversationEventPayload, jsonRecord } from "./event-payloads.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
 import { projectAgentCalls } from "./session-agent-calls.js"
-import { holdsInProgress, projectSessionSidebarState } from "./session-sidebar-state.js"
+import { projectSessionSidebarState } from "./session-sidebar-state.js"
 import {
   announceFinishedTurn,
   endsAnnouncedTurn,
@@ -41,8 +41,6 @@ const attentionRows = rowReader({
   settle_due_at: nullable(text)
 })
 
-const backgroundTaskRows = rowReader({ background_tasks: text })
-
 const settleRows = rowReader({
   session_id: text,
   settle_due_at: nullable(text)
@@ -61,15 +59,8 @@ const attentionRow = (sqlite: Database.Database, sessionId: string) =>
 const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boolean =>
   sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
 
-const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean => {
-  const backgroundTasks = backgroundTasksJson(sqlite, sessionId)
-  /* v8 ignore next */
-  if (backgroundTasks === undefined) return false
-  return (
-    backgroundTasksFromRaw(backgroundTasks).some(holdsInProgress) ||
-    sessionHasActiveGoal(sqlite, sessionId)
-  )
-}
+const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean =>
+  sessionHasActiveGoal(sqlite, sessionId)
 
 const sessionHasQueuedPrompts = (sqlite: Database.Database, sessionId: string): boolean =>
   sqlite.prepare(queuedPromptSql).get(sessionId) !== undefined
@@ -310,9 +301,6 @@ interface AttentionMode {
   readonly harnessId: string
 }
 
-const backgroundTasksJson = (sqlite: Database.Database, sessionId: string): string | undefined =>
-  backgroundTaskRows.maybe(sqlite.prepare(backgroundTasksSql).get(sessionId))?.background_tasks
-
 const pendingSettleDueAt = (
   sqlite: Database.Database,
   sessionId: string
@@ -360,8 +348,6 @@ const attentionSql = {
   queueFinish:
     "update session_attention set pending_finish = 1, settle_due_at = ? where session_id = ?"
 }
-
-const backgroundTasksSql = "select background_tasks from sessions where id = ?"
 
 const queuedPromptSql = "select 1 from prompt_queue_items where session_id = ? limit 1"
 

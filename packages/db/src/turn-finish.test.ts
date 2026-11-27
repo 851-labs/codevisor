@@ -2,15 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
-import { run, tempDatabase } from "./test-support.js"
+import { goalUpdate, run, tempDatabase } from "./test-support.js"
 
-const devServer = {
+const devServerAndSubagent = {
   backgroundTasks: [
-    { id: "shell-1", description: "bun run dev", status: "running", taskType: "shell" }
-  ]
-}
-const subagent = {
-  backgroundTasks: [
+    { id: "shell-1", description: "bun run dev", status: "running", taskType: "shell" },
     { id: "agent-1", description: "Research", status: "running", taskType: "subagent" }
   ]
 }
@@ -78,12 +74,12 @@ describe("turn finish", () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  it("finishes a turn that leaves a dev server running, for the human and for subscribers alike", async () => {
+  it("finishes a turn that leaves a dev server or a sub agent running, for the human and for subscribers alike", async () => {
     const db = await openDatabase()
-    const chat = await plainChat(db, "/tmp/finish-dev-server")
+    const chat = await plainChat(db, "/tmp/finish-background")
 
     await startTurn(db, chat.id, "t-1")
-    await event(db, chat.id, devServer)
+    await event(db, chat.id, devServerAndSubagent)
     const ended = await endTurn(db, chat.id, "t-1")
 
     expect(await run(db.getSessionSummary(chat.id))).toMatchObject({
@@ -97,15 +93,15 @@ describe("turn finish", () => {
     })
   })
 
-  it("holds the finish for a running subagent and releases it with the unread mark after the grace", async () => {
+  it("holds the finish for an active goal and releases it with the unread mark after the grace", async () => {
     const db = await openDatabase()
-    const chat = await plainChat(db, "/tmp/finish-subagent")
+    const chat = await plainChat(db, "/tmp/finish-goal")
 
     await startTurn(db, chat.id, "t-1")
-    await event(db, chat.id, subagent)
+    await event(db, chat.id, goalUpdate("active"))
     await endTurn(db, chat.id, "t-1")
     const held = await run(db.getFinishedTurn(chat.id))
-    await event(db, chat.id, { backgroundTasks: [] })
+    await event(db, chat.id, goalUpdate("complete"))
     const beforeGrace = await run(db.settleSessionAttention(chat.id))
     vi.setSystemTime(new Date(Date.now() + ATTENTION_SETTLE_GRACE_MS))
     const settled = await run(db.settleSessionAttention(chat.id))
