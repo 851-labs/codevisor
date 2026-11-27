@@ -115,6 +115,7 @@ package final class ScreenSharingRenderCoordinator {
     self.redrawsOnDemand = redrawsOnDemand
     self.hop = hop
     self.clock = clock
+    mailbox.recordArrivals(with: clock.now)
   }
 
   package func bind(requestDraw: @escaping @MainActor () -> Void) {
@@ -127,7 +128,7 @@ package final class ScreenSharingRenderCoordinator {
 
   package func arrivalScheduled() {
     guard !stopped else { return }
-    catchUp.arrived(atNs: clock.now())
+    noteArrivals()
     requestDraw()
   }
 
@@ -147,7 +148,9 @@ package final class ScreenSharingRenderCoordinator {
   }
 
   package func select() -> (frame: ScreenSharingVideoFrame, isNewFrame: Bool)? {
-    guard !stopped, !inFlight, !holdsToCatchUp() else { return nil }
+    guard !stopped, !inFlight else { return nil }
+    noteArrivals()
+    guard !holdsToCatchUp() else { return nil }
     let incoming = takeIncoming()
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
@@ -186,7 +189,12 @@ package final class ScreenSharingRenderCoordinator {
     requestDraw()
   }
 
+  private func noteArrivals() {
+    for arrivedNs in mailbox.takeArrivals() { catchUp.arrived(atNs: arrivedNs) }
+  }
+
   private func noteCommit(waitedForDrawableNs waitedNs: Int64) {
+    noteArrivals()
     guard catchUp.committed(waitedNs: waitedNs, atNs: clock.now()) else { return }
 
     metrics.increment("renderCatchUps")
@@ -332,6 +340,7 @@ package final class ScreenSharingRenderCoordinator {
     stopped = true
     requestDraw = {}
     mailbox.onFrameAvailable(nil)
+    mailbox.recordArrivals(with: nil)
     mailbox.clear()
     lastFrame = nil
     heldFrame = nil

@@ -141,5 +141,50 @@
 
       #expect(fixture.capture.cadence == ScreenSharingCaptureCadence(displayRefreshHz: 144))
     }
+
+    @Test func aRefreshRateThatCannotBeReadMidSessionKeepsTheCadence() async throws {
+      let fixture = CaptureFixture()
+      let refresh = Refresh(60)
+      try await start(fixture, refresh: refresh)
+
+      refresh.hz = nil
+      try await fixture.capture.followDisplayRefresh()
+
+      #expect(fixture.stream.calls == [.start])
+      #expect(fixture.capture.cadence.displayRefreshHz == 60)
+    }
+
+    @Test func aRefreshRateThatAsksForTheSameIntervalOnlyRelabels() async throws {
+      let fixture = CaptureFixture()
+      let refresh = Refresh(60)
+      try await start(fixture, refresh: refresh)
+
+      refresh.hz = 59.94
+      try await fixture.capture.followDisplayRefresh()
+
+      #expect(fixture.stream.calls == [.start])
+      #expect(fixture.metrics.label("captureDisplayRefreshHz") == "59.94")
+    }
+
+    @Test func aFollowDuringAResizeWaitsAndKeepsTheNewSize() async throws {
+      let fixture = CaptureFixture()
+      let refresh = Refresh(120)
+      try await start(fixture, refresh: refresh)
+      let held = CaptureGate()
+      fixture.stream.holdUpdate = held
+      let resize = Task { @MainActor in try await fixture.capture.update(configuration: .init(width: 1280, height: 720))
+      }
+      await held.entered.wait()
+
+      refresh.hz = 60
+      let follow = Task { @MainActor in try await fixture.capture.followDisplayRefresh() }
+      for _ in 0..<20 { await Task.yield() }
+      held.release()
+      try await resize.value
+      try await follow.value
+
+      #expect(fixture.stream.calls == [.start, .update, .update])
+      #expect(fixture.stream.updated?.width == 1280 && fixture.stream.updated?.interval == Self.everyRefresh)
+    }
   }
 #endif

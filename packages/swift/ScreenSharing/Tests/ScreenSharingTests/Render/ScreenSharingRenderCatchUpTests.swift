@@ -260,4 +260,17 @@ struct ScreenSharingRenderCatchUpTests {
     #expect(f.draws.count == drawsBefore + 1 && f.draw())
     #expect(f.preparer.requested.last == 5)
   }
+
+  @Test func framesThatReplaceEachOtherWhileTheViewerIsBehindStillCountAsFullRate() throws {
+    let f = Fixture()
+    for index in Int64(0)...11 {
+      f.time.advance(to: 1_000_000_000 + index * Self.periodNs - 3_000_000)
+      f.mailbox.put(try f.frame(UInt32(index)))
+      guard index.isMultiple(of: 2) == false, f.draw() else { continue }
+
+      f.preparer.finish(waitedNs: index >= 9 ? Self.starvedWaitNs : 0)?.finish()
+    }
+
+    #expect(f.counter("renderCatchUps") == 1)
+  }
 }

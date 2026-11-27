@@ -101,6 +101,9 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private var replacements = 0
   private var onAvailable: (@Sendable () -> Void)?
   private var keepsLatest = false
+  private var arrivalClock: (@Sendable () -> Int64)?
+  private var arrivals: [Int64] = []
+  private static let recordedArrivals = 8
 
   public init() {}
 
@@ -120,6 +123,10 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
       if previous != nil { replacements += 1 }
       frame = value
       if keepsLatest { latest = value }
+      if let arrivalClock {
+        arrivals.append(arrivalClock())
+        if arrivals.count > Self.recordedArrivals { arrivals.removeFirst(arrivals.count - Self.recordedArrivals) }
+      }
       return (previous == nil ? onAvailable : nil, Array(taps.values))
     }
     notify?()
@@ -151,6 +158,20 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
     lock.withLock {
       defer { frame = nil }
       return frame
+    }
+  }
+
+  package func recordArrivals(with clock: (@Sendable () -> Int64)?) {
+    lock.withLock {
+      arrivalClock = clock
+      arrivals = []
+    }
+  }
+
+  package func takeArrivals() -> [Int64] {
+    lock.withLock {
+      defer { arrivals = [] }
+      return arrivals
     }
   }
 

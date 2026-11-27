@@ -484,14 +484,14 @@
   final class CaptureGate: @unchecked Sendable {
     let entered = TestSignal()
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     private var released = false
 
     func enter() async {
       await withCheckedContinuation { continuation in
         let open = lock.withLock {
           if released { return true }
-          self.continuation = continuation
+          continuations.append(continuation)
           return false
         }
         entered.signal()
@@ -502,11 +502,10 @@
     func release() {
       let pending = lock.withLock {
         released = true
-        let pending = continuation
-        continuation = nil
-        return pending
+        defer { continuations = [] }
+        return continuations
       }
-      pending?.resume()
+      for continuation in pending { continuation.resume() }
     }
   }
 

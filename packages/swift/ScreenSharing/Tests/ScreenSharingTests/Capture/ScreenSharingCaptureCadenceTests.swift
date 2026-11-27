@@ -8,27 +8,28 @@ struct ScreenSharingCaptureCadenceTests {
     cadence.minimumFrameInterval.convertScale(1_000_000_000, method: .default).value
   }
 
-  @Test(arguments: [60.0, 59.94, 50, 30])
+  @Test(arguments: [60.0, 59.94, 60.4, 50, 30])
   func aDisplayOfAtMostSixtyHertzIsCapturedAtEveryRefresh(refreshHz: Double) {
     let cadence = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
 
     #expect(cadence.minimumFrameInterval == CMTime(value: 1, timescale: 480))
-    #expect(cadence.framesPerSecond == refreshHz)
   }
 
   @Test func aOneHundredTwentyHertzDisplayIsCapturedAtEveryOtherRefreshWithHeadroom() {
-    let cadence = ScreenSharingCaptureCadence(displayRefreshHz: 120)
-
-    #expect(Self.intervalNs(cadence) == 15_625_000)
-    #expect(cadence.framesPerSecond == 60)
+    #expect(Self.intervalNs(ScreenSharingCaptureCadence(displayRefreshHz: 120)) == 15_625_000)
   }
 
-  @Test(arguments: [(90.0, 20_833_333 as Int64, 45.0), (144, 19_531_250, 48), (75, 25_000_000, 37.5)])
-  func aFasterDisplayNeverYieldsMoreThanSixtyCapturesASecond(refreshHz: Double, intervalNs: Int64, perSecond: Double) {
-    let cadence = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
+  @Test(arguments: [(90.0, 20_833_333 as Int64), (144, 19_531_250), (75, 25_000_000)])
+  func aFasterDisplayNeverYieldsMoreThanSixtyCapturesASecond(refreshHz: Double, intervalNs: Int64) {
+    #expect(Self.intervalNs(ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)) == intervalNs)
+  }
 
-    #expect(Self.intervalNs(cadence) == intervalNs)
-    #expect(cadence.framesPerSecond == perSecond)
+  @Test(arguments: [(120.01, 120.0), (119.99, 120), (240.01, 240), (180.3, 180)])
+  func aRefreshRateJustOffAMultipleOfSixtyIsCapturedAsThatMultiple(refreshHz: Double, nominalHz: Double) {
+    let cadence = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
+    let nominal = ScreenSharingCaptureCadence(displayRefreshHz: nominalHz)
+
+    #expect(abs(Self.intervalNs(cadence) - Self.intervalNs(nominal)) < 100_000)
   }
 
   @Test(arguments: [nil, 0.0, -1, .nan])
@@ -36,6 +37,11 @@ struct ScreenSharingCaptureCadenceTests {
     let cadence = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
 
     #expect(cadence == ScreenSharingCaptureCadence(displayRefreshHz: 120))
+  }
+
+  @Test func cadencesAreEqualWhenTheyAskForTheSameInterval() {
+    #expect(ScreenSharingCaptureCadence(displayRefreshHz: 60) == ScreenSharingCaptureCadence(displayRefreshHz: 59.94))
+    #expect(ScreenSharingCaptureCadence(displayRefreshHz: 60) != ScreenSharingCaptureCadence(displayRefreshHz: 120))
   }
 
   @Test func aVideoRateBelowSixtyIsKeptOnAnyDisplay() {

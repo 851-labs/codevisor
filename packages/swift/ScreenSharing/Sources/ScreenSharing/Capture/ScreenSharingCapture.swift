@@ -26,6 +26,7 @@
     private var video: ScreenSharingVideoConfiguration?
     public private(set) var cadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
     private var displayRefresh: @MainActor () -> Double? = { nil }
+    private let reconfigurations = ScreenSharingCaptureTurns()
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
@@ -131,6 +132,11 @@
     }
 
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
+      guard stream != nil, output != nil else { throw ScreenSharingError.unavailable("Capture is not running.") }
+      try await reconfigurations.run { [self] in try await apply(configuration) }
+    }
+
+    private func apply(_ configuration: ScreenSharingVideoConfiguration) async throws {
       guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
       output.changes.reconfigurationBegan()
@@ -144,15 +150,24 @@
     }
 
     public func followDisplayRefresh() async throws {
-      let following = ScreenSharingCaptureCadence(displayRefreshHz: displayRefresh())
-      guard following != cadence, stream != nil else { return }
+      await startSettled()
+      try await reconfigurations.run { [self] in try await applyDisplayRefresh() }
+    }
+
+    private func applyDisplayRefresh() async throws {
+      guard let refreshHz = displayRefresh(), let video, stream != nil else { return }
+
+      let following = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
+      guard following.displayRefreshHz != cadence.displayRefreshHz else { return }
 
       let previous = cadence
       let generation = generation
       cadence = following
-      do { try await reconfigure() } catch {
-        if self.generation == generation, cadence == following { cadence = previous }
-        throw error
+      if following != previous {
+        do { try await apply(video) } catch {
+          if self.generation == generation { cadence = previous }
+          throw error
+        }
       }
       if self.generation == generation, let metrics = output?.metrics { label(cadence, on: metrics) }
     }
@@ -233,8 +248,10 @@
 
     private func reconfigure() async throws {
       await startSettled()
-      guard let video, stream != nil else { return }
-      try await update(configuration: video)
+      try await reconfigurations.run { [self] in
+        guard let video, stream != nil else { return }
+        try await apply(video)
+      }
     }
 
     static func streamConfiguration(
