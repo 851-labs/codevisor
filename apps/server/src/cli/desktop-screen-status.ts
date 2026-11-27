@@ -17,7 +17,8 @@ export const screenStatusLines = (status: DesktopStatus): ReadonlyArray<string> 
 export const describeScreen = (status: DesktopStatus, screen: ScreenStatus): string => {
   if (screen.session !== undefined)
     return `${status.account} is logged in at this machine's screen${where(screen)}`
-  if (screen.others.length > 0) return `${screen.others.join(" and ")} at this machine's screen`
+  if (screen.others.length > 0)
+    return `${screen.others.join(" and ")} ${isOrAre(screen)} logged in at this machine's screen`
 
   return "nobody is logged in at this machine's screen"
 }
@@ -35,5 +36,7 @@ const sessionName = (screen: ScreenStatus): string => (screen.session === "x11" 
 const whoIs = (screen: ScreenStatus): string => {
   if (screen.others.length === 0) return ""
 
-  return ` (${screen.others.join(" and ")} ${screen.others.length === 1 ? "is" : "are"})`
+  return ` (${screen.others.join(" and ")} ${isOrAre(screen)})`
 }
+
+const isOrAre = (screen: ScreenStatus): string => (screen.others.length === 1 ? "is" : "are")
