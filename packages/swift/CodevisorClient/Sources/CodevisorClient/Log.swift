@@ -4,6 +4,7 @@ public enum Log {
   public static let subsystem = "com.851labs.codevisor"
 
   public static let persistence = Logger(subsystem: subsystem, category: "persistence")
+  public static let clientCache = Logger(subsystem: subsystem, category: "client-cache")
   public static let server = Logger(subsystem: subsystem, category: "server")
   public static let session = Logger(subsystem: subsystem, category: "session")
   public static let machines = Logger(subsystem: subsystem, category: "machines")

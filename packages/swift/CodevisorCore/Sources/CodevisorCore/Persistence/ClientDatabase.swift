@@ -214,11 +214,19 @@ public final class ClientDatabase: @unchecked Sendable {
     }
   }
 
-  enum Binding {
+  enum Binding: Sendable {
     case blob(Data)
     case integer(Int64)
     case null
     case text(String)
+
+    static func optionalText(_ value: String?) -> Binding {
+      value.map(Binding.text) ?? .null
+    }
+
+    static func optionalBlob(_ value: Data?) -> Binding {
+      value.map(Binding.blob) ?? .null
+    }
   }
 
   func executePrepared(_ sql: String, bindings: [Binding]) throws {
@@ -241,6 +249,27 @@ public final class ClientDatabase: @unchecked Sendable {
     guard count > 0 else { return Data() }
     guard let bytes = sqlite3_column_blob(statement, 0) else { return Data() }
     return Data(bytes: bytes, count: count)
+  }
+
+  func queryRows<Row>(
+    _ sql: String, bindings: [Binding], read: (ClientDatabaseRow) throws -> Row
+  ) throws -> [Row] {
+    try lock.withLock {
+      let statement = try prepare(sql)
+      defer { sqlite3_finalize(statement) }
+      try bind(bindings, to: statement)
+      var rows: [Row] = []
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return rows }
+        guard step == SQLITE_ROW else { throw makeError(operation: "read") }
+        rows.append(try read(ClientDatabaseRow(statement: statement)))
+      }
+    }
+  }
+
+  func run(_ sql: String, bindings: [Binding]) throws {
+    try lock.withLock { try executePrepared(sql, bindings: bindings) }
   }
 
   func queryText(_ sql: String, bindings: [Binding]) throws -> String? {

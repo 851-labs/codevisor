@@ -13,7 +13,10 @@ extension SessionController {
     if presentsBotConversation { model.presentBotConversation() }
     model.onTurnEnded = { [weak self, weak model] in
       self?.liveTurnEndRevision &+= 1
-      if let model { self?.captureTurnEnded(model) }
+      if let model {
+        self?.captureTurnEnded(model)
+        self?.refreshCachedTranscript(of: model)
+      }
       self?.noteTurnEndedForPlanApproval()
       self?.onTurnEnded?()
     }
@@ -58,6 +61,36 @@ extension SessionController {
       if loadsExistingHistory {
         finishInitialHistoryLoading(sessionId: sessionId, outcome: "cached")
       }
+    }
+  }
+
+  var cacheRecorder: SessionCacheRecorder? {
+    guard let clientCache, let serverSession else { return nil }
+
+    return SessionCacheRecorder(cache: clientCache, machineId: serverSession.serverId, chatId: serverSession.id)
+  }
+
+  func rememberOpenedTranscript(_ data: Data, machineId: String, sessionId: UUID) {
+    transcriptCache?.store(data, machineId: machineId, sessionId: sessionId)
+    cacheRecorder?.recordOpened(data)
+  }
+
+  func recordingPages(of transport: ServerSessionTransport) -> ServerSessionTransport {
+    cacheRecorder?.recordingPages(of: transport) ?? transport
+  }
+
+  func recordQueuedSends() {
+    cacheRecorder?.recordQueuedSends(sends.unsent)
+  }
+
+  func refreshCachedTranscript(of model: SessionModel) {
+    guard let recorder = cacheRecorder else { return }
+
+    Task { [weak model] in
+      guard let transport = model?.transport else { return }
+      _ = try? await transport.transcriptPage(limit: SessionModel.initialTranscriptPageSize)
+      guard let model else { return }
+      recorder.audit(model)
     }
   }
 

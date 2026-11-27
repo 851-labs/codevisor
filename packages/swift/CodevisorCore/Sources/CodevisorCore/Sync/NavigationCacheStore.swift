@@ -8,11 +8,16 @@ final class NavigationCacheStore {
   private(set) var caches: [String: MachineNavigationCache] = [:]
   private(set) var generations: [String: UInt64] = [:]
   private let store: any PersistenceStore
+  private let clientCache: ClientCache?
   private let persistenceOwner = UUID()
 
-  init(store: any PersistenceStore, preloaded: [String: MachineNavigationCache]? = nil) {
+  init(
+    store: any PersistenceStore, preloaded: [String: MachineNavigationCache]? = nil, clientCache: ClientCache? = nil
+  ) {
     self.store = store
+    self.clientCache = clientCache
     caches = preloaded ?? Self.loadCaches(from: store)
+    for cache in caches.values { clientCache?.recordNavigation(cache.snapshot, machineId: cache.machineId) }
   }
 
   nonisolated static func loadCaches(from store: any PersistenceStore) -> [String: MachineNavigationCache] {
@@ -40,6 +45,7 @@ final class NavigationCacheStore {
     let store = store
     let snapshot = cache.snapshot
     let key = Self.keyPrefix + cache.machineId
+    clientCache?.recordNavigation(snapshot, machineId: cache.machineId)
     PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key) {
       do {
         try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: key)
@@ -53,6 +59,7 @@ final class NavigationCacheStore {
   func remove(machineId: String) {
     guard caches.removeValue(forKey: machineId) != nil else { return }
     generations[machineId, default: 0] &+= 1
+    clientCache?.forgetMachine(machineId)
     let store = store
     let key = Self.keyPrefix + machineId
     PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key, delay: 0) {

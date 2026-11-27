@@ -160,10 +160,10 @@ extension MachineController {
       if let config = cloudProvider?.relayServerConfig(forDeviceId: deviceId) {
         return connectedClient(config, machineId: machineId)
       }
-      return CodevisorServerClient(config: .unreachable(machineId: machineId))
+      return unreachableClient(machineId: machineId)
     }
     guard let machine = machine(for: machineId) else {
-      return CodevisorServerClient(config: .unreachable(machineId: machineId))
+      return unreachableClient(machineId: machineId)
     }
     return connectedClient(machine.serverConfig, machineId: machine.id)
   }
@@ -178,7 +178,12 @@ extension MachineController {
 
   private func connectedClient(_ config: CodevisorServerConfig, machineId: String) -> CodevisorServerClient {
     CodevisorServerClient(
-      config: config, requestGate: requestGate, machineId: machineId, isOnThisDevice: isThisDevice(machineId))
+      config: config, requestGate: requestGate, machineId: machineId, fileCache: fileCache,
+      isOnThisDevice: isThisDevice(machineId))
+  }
+
+  private func unreachableClient(machineId: String) -> CodevisorServerClient {
+    CodevisorServerClient(config: .unreachable(machineId: machineId), machineId: machineId, fileCache: fileCache)
   }
 
   public func serverConfig(for machineId: String) -> CodevisorServerConfig {

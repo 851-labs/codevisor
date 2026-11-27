@@ -5,11 +5,16 @@ public struct ClientStorage: Sendable {
   public let database: ClientDatabase
   public let store: ClientPersistenceStore
   public let launchSnapshot: ClientLaunchSnapshot?
+  public let cache: ClientCache?
 
-  public init(database: ClientDatabase, store: ClientPersistenceStore, launchSnapshot: ClientLaunchSnapshot? = nil) {
+  public init(
+    database: ClientDatabase, store: ClientPersistenceStore, launchSnapshot: ClientLaunchSnapshot? = nil,
+    cache: ClientCache? = nil
+  ) {
     self.database = database
     self.store = store
     self.launchSnapshot = launchSnapshot
+    self.cache = cache
   }
 }
 
@@ -61,7 +66,8 @@ public enum ClientStorageBootstrap {
       let storage = ClientStorage(
         database: opened.database,
         store: opened.store,
-        launchSnapshot: ClientLaunchSnapshot.read(from: opened.store)
+        launchSnapshot: ClientLaunchSnapshot.read(from: opened.store),
+        cache: opened.cache
       )
       return (storage, try? opened.database.allPreferences())
     }.value
@@ -135,9 +141,13 @@ public enum ClientStorageBootstrap {
     LegacyClientArtifacts.pruneExpiredRecovery(in: directory, fileManager: fileManager)
     LegacyClientArtifacts.removeRetiredCaches(in: directory, fileManager: fileManager)
     return ClientStorage(
-      database: database,
-      store: store
-    )
+      database: database, store: store, cache: openCache(databaseURL: databaseURL, fileManager: fileManager))
+  }
+
+  private static func openCache(databaseURL: URL, fileManager: FileManager) -> ClientCache? {
+    let files = CodevisorAppVariant.cacheURL(fileManager: fileManager)
+      .appendingPathComponent(ClientCache.filesDirectoryName, isDirectory: true)
+    return ClientCache.open(databaseURL: databaseURL, filesDirectory: files)
   }
 
   private static func importLegacyState(

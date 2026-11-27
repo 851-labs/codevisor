@@ -50,6 +50,7 @@ final class ChatControllerCache {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.transcriptCache = environment.transcriptCache
+    controller.clientCache = environment.clientCache
     controller.configureExistingSession(session)
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(
@@ -113,6 +114,7 @@ final class ChatControllerCache {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
+    controller.clientCache = environment.clientCache
     controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     keepAsDraft(controller, slotServerId: slotServerId, environment: environment)

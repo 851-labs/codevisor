@@ -6,8 +6,11 @@ import TranscriptKit
 public struct ServerSessionTransport: Sendable {
   public static let liveOnlyEventCursor = 9_007_199_254_740_991
 
+  public typealias PageReceiver = @Sendable (_ data: Data, _ before: String?) -> Void
+
   let client: any CodevisorServerClienting
   let sessionId: UUID
+  public var onPageReceived: PageReceiver?
 
   public init(client: any CodevisorServerClienting, sessionId: UUID) {
     self.client = client
@@ -35,7 +38,9 @@ public struct ServerSessionTransport: Sendable {
   }
 
   public func transcriptPage(before: String? = nil, limit: Int = 32) async throws -> TranscriptHistoryPage {
-    historyPage(from: try await client.transcriptPage(id: sessionId, before: before, limit: limit))
+    let result = try await client.transcriptPageReturningData(id: sessionId, before: before, limit: limit)
+    if let data = result.data { onPageReceived?(data, before) }
+    return historyPage(from: result.page)
   }
 
   public func historyPage(from page: ServerTranscriptPage) -> TranscriptHistoryPage {

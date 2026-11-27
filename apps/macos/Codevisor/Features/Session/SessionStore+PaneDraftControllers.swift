@@ -34,6 +34,7 @@ extension SessionStore {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
+    controller.clientCache = environment.clientCache
     if let persisted = environment.composerDrafts.paneDraft(forPane: paneId) {
       controller.restoreDraft(persisted)
     }

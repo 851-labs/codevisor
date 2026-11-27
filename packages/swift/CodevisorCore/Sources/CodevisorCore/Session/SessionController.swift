@@ -60,6 +60,7 @@ final public class SessionController {
     onUploaded: { [weak self] uploaded, sentFileID in self?.rememberUploaded(uploaded, sentAs: sentFileID) },
     onChange: { [weak self] in
       self?.transcriptProjectionRevision &+= 1
+      self?.recordQueuedSends()
       self?.onPendingSendsChange?()
     }
   )
@@ -265,6 +266,7 @@ final public class SessionController {
   public internal(set) var pendingPlanApproval = false
 
   public var transcriptCache: TranscriptPageCache?
+  public var clientCache: ClientCache?
   public var reportsTurnAnalytics = true
   var cachedTranscriptModel: SessionModel?
   var transcriptCacheLoadGeneration: UInt64 = 0

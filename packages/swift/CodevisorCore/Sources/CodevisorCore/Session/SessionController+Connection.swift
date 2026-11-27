@@ -318,7 +318,7 @@ extension SessionController {
         finishInitialHistoryLoading(sessionId: session.id, outcome: "cached")
       }
     } else {
-      transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
+      transport = recordingPages(of: ServerSessionTransport(client: serverClient, sessionId: session.id))
       model = makeServerSessionModel(transport: transport, harnessId: harnessId, sessionId: session.id)
       reusesCachedDisplay = false
       cachedTranscriptLoad = startCachedTranscriptLoad(
@@ -345,9 +345,7 @@ extension SessionController {
     session = try opened.response.session.chatSession(serverId: scopedServerId)
     preloadedTranscript = opened.response.transcript
     persistedRuntime = opened.response.runtime
-    if let data = opened.data {
-      transcriptCache?.store(data, machineId: scopedServerId, sessionId: session.id)
-    }
+    if let data = opened.data { rememberOpenedTranscript(data, machineId: scopedServerId, sessionId: session.id) }
     self.serverSession = session
 
     connectedHarnessId = harnessId

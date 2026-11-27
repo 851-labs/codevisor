@@ -2,9 +2,7 @@ import CodevisorCore
 
 extension SessionStore {
   func draft(project: Project) -> SessionController {
-    if let draft = draftsByServer[project.serverId], draft.serverSession == nil {
-      return draft
-    }
+    if let draft = draftsByServer[project.serverId], draft.serverSession == nil { return draft }
     if let draft = draftsByServer.values.first(where: {
       $0.serverSession == nil && $0.project.serverId == project.serverId
     }) {
@@ -49,6 +47,7 @@ extension SessionStore {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
+    controller.clientCache = environment.clientCache
     controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     enableDraftPersistence(for: controller, slotServerId: draftSlotServerId)

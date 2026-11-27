@@ -22,10 +22,12 @@ public final class NavigationStore {
   public init(
     store: any PersistenceStore,
     launchSnapshot: ClientLaunchSnapshot? = nil,
+    clientCache: ClientCache? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     now: @escaping () -> Date = Date.init
   ) {
-    caches = NavigationCacheStore(store: store, preloaded: launchSnapshot?.navigationCaches)
+    caches = NavigationCacheStore(
+      store: store, preloaded: launchSnapshot?.navigationCaches, clientCache: clientCache)
     outbox = NavigationOutbox(store: store)
     layouts = DeviceLayoutStore(store: store)
     executor = NavigationOutboxExecutor(outbox: outbox, clock: clock, now: now)

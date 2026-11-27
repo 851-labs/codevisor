@@ -22,6 +22,7 @@ public final class MachineController {
   let localServer: (any LocalServerControlling)?
   let injectedClientFactory: ClientFactory?
   let requestGate: ServerRequestGate
+  let fileCache: (any ServerFileCaching)?
   private let key = "machines"
   let updatePollInterval: Duration
   let updatePollAttempts: Int
@@ -45,6 +46,7 @@ public final class MachineController {
     workspaceSync: WorkspaceSyncModel? = nil,
     localServer: (any LocalServerControlling)? = nil,
     clientFactory: ClientFactory? = nil,
+    fileCache: (any ServerFileCaching)? = nil,
     updatePollInterval: Duration = .seconds(2),
     updatePollAttempts: Int = 90,
     updateScheduler: ServerUpdateScheduler = .continuous,
@@ -63,6 +65,7 @@ public final class MachineController {
     self.localServer = localServer
     self.requestGate = requestGate
     self.injectedClientFactory = clientFactory
+    self.fileCache = fileCache
     self.updatePollInterval = updatePollInterval
     self.updatePollAttempts = updatePollAttempts
     self.updateScheduler = updateScheduler
