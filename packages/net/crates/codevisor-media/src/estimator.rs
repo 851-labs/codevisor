@@ -182,8 +182,8 @@ impl Estimator {
         self.lost.bytes
     }
 
-    pub fn take_back_lost(&mut self, bytes: usize) {
-        self.lost.take_back(bytes);
+    pub fn take_back_lost(&mut self, lost_at: Instant, bytes: usize) {
+        self.lost.take_back(lost_at, bytes);
     }
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
@@ -368,8 +368,8 @@ impl Throughput {
         self.bytes += bytes;
     }
 
-    fn take_back(&mut self, mut bytes: usize) {
-        for (_, entry) in self.entries.iter_mut().rev() {
+    fn take_back(&mut self, at: Instant, mut bytes: usize) {
+        for (_, entry) in self.entries.iter_mut().rev().filter(|(pushed, _)| *pushed == at) {
             let taken = bytes.min(*entry);
             *entry -= taken;
             self.bytes -= taken;
