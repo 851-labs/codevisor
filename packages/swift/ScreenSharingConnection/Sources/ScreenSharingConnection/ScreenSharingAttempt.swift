@@ -85,7 +85,7 @@ final class ScreenSharingAttempt {
     do {
       if let end = try await host.whyItEnded() { return end }
       try checkOpen()
-      let capabilities = try await host.capabilities()
+      let capabilities = try await host.capabilities { report(.unavailable($0.base.unavailable ?? [])) }
       try checkOpen()
       let transport = try makeTransport(for: capabilities)
       self.transport = transport
@@ -109,7 +109,6 @@ final class ScreenSharingAttempt {
 
   private func makeTransport(for capabilities: ScreenSharingHostReply) throws -> any ScreenSharingTransport {
     let displays = capabilities.base.displays
-    report(.unavailable(capabilities.base.unavailable ?? []))
     report(.transport(.sharing(display: nil, displays: displays)))
 
     if machine.target == nil, capabilities.base.provider == "vnc", let makeVNC = machine.makeVNCTransport {

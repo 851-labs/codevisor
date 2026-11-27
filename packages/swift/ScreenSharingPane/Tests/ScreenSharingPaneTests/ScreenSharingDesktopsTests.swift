@@ -125,6 +125,22 @@ struct ScreenSharingDesktopsTests {
     #expect(relaunched?.selectedDisplay == FakeHost.second)
   }
 
+  @Test(
+    "While a display switch is under way the menu shows the display picked, and picking the old one again goes back")
+  func menuFollowsAPendingSwitch() async {
+    let harness = DesktopsHarness()
+    harness.host.displays = [FakeHost.display, FakeHost.second]
+    harness.host.displaySwitchAnswer = .stillSwitching
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    model?.select(displayId: FakeHost.second.id)
+    #expect(model?.pickedDisplayId == FakeHost.second.id && model?.selectedDisplay == FakeHost.display)
+    model?.select(displayId: FakeHost.display.id)
+    #expect(model?.pickedDisplayId == FakeHost.display.id)
+  }
+
   @Test("A display the machine can't share is listed with its reason, and can't be picked")
   func unavailableDisplayIsExplained() async {
     let harness = DesktopsHarness()

@@ -83,7 +83,7 @@
             Picker(
               "Display",
               selection: Binding(
-                get: { model.selectedDisplay?.id ?? "" },
+                get: { model.pickedDisplayId ?? "" },
                 set: { model.select(displayId: $0) })
             ) {
               ForEach(model.displays, id: \.id) { display in

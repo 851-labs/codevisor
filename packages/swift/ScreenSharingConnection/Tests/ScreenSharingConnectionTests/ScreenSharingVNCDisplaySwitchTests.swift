@@ -74,6 +74,43 @@ struct ScreenSharingVNCDisplaySwitchTests {
     #expect(opened.ids == [Self.desktop.id])
   }
 
+  @Test("A picked display the machine no longer offers is reported with its reason, and isn't saved")
+  func reportsAPickTheMachineNoLongerOffers() async throws {
+    let server = try await RFBLoopbackServer()
+    defer { server.stop() }
+    let (harness, opened) = linuxMachine(port: server.port)
+    let connection = harness.connection
+    _ = harness.show()
+    await awaitObserved { connection.state == .live }
+    let why = "This machine's screen isn't being shared right now."
+    harness.host.displays = [Self.desktop]
+    harness.host.unavailable = [ServerScreenSharingUnavailableDisplay(id: Self.screen.id, name: "Screen", problem: why)]
+
+    connection.switchDisplay(to: Self.screen.id)
+    await awaitObserved { connection.displaySwitch?.phase != .switching && connection.state == .live }
+
+    #expect(connection.displaySwitch == Switch(displayId: Self.screen.id, phase: .unavailable(message: why)))
+    #expect(connection.display == Self.desktop && connection.preferredDisplayId == nil)
+    #expect(opened.ids == [Self.desktop.id, Self.desktop.id])
+  }
+
+  @Test("A second pick while the first one is still reconnecting wins, with no error for the first")
+  func aSecondPickWins() async throws {
+    let server = try await RFBLoopbackServer()
+    defer { server.stop() }
+    let (harness, opened) = linuxMachine(port: server.port)
+    let connection = harness.connection
+    _ = harness.show()
+    await awaitObserved { connection.state == .live }
+
+    connection.switchDisplay(to: Self.screen.id)
+    connection.switchDisplay(to: Self.desktop.id)
+    await awaitObserved { connection.displaySwitch?.phase != .switching && connection.state == .live }
+
+    #expect(connection.displaySwitch == Switch(displayId: Self.desktop.id, phase: .confirmed))
+    #expect(connection.display == Self.desktop && opened.ids.last == Self.desktop.id)
+  }
+
   @Test("The displays the machine can't share are kept with the reason it gives")
   func keepsWhyADisplayIsUnavailable() async throws {
     let server = try await RFBLoopbackServer()

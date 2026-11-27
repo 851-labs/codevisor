@@ -70,6 +70,12 @@ public final class ScreenSharingPaneModel {
 
   public var selectedDisplay: ServerScreenSharingDisplay? { connection.display }
 
+  public var pickedDisplayId: String? {
+    guard let pending = connection.displaySwitch, pending.phase == .switching else { return selectedDisplay?.id }
+
+    return pending.displayId
+  }
+
   public var control: ScreenSharingControlSession? { viewed?.control }
 
   public var diagnostics: ScreenSharingViewerDiagnostics? { viewed?.diagnostics }
@@ -93,7 +99,7 @@ public final class ScreenSharingPaneModel {
   }
 
   public func select(displayId id: String) {
-    guard id != selectedDisplay?.id, displays.contains(where: { $0.id == id }) else { return }
+    guard id != pickedDisplayId, displays.contains(where: { $0.id == id }) else { return }
 
     connection.switchDisplay(to: id)
     onDisplayChosen(id)
