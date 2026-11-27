@@ -159,7 +159,13 @@ no jitter buffer and no queue deeper than one frame.
     0.1%, the cut threw the measured rate away and the estimate fell to the next small sample, about 3 Mbit/s, for the
     rest of the run (16 traced local runs, 5 of 8 collapsed on main). The count only misses late originals (a copy
     later than that counts as the resend), so it can hide a real loss only if the round trip falls below half its
-    session low. A taken-back packet also comes off the estimator's lost bytes, from the request it was charged with. The FEC trigger keeps each frame's requested losses apart: a frame whose losses were all only late stops keeping FEC on, without touching another frame's. A frame stays a loss when its last packet was requested while a tail probe's copy of it was on its way (that copy can arrive early, so the packet isn't taken back) or when a repeat had to be sent again. A frame resolved by a later frame's report keeps what it was charged, and holds the window, until its own report arrives. Feedback naming more than eight ranges keeps the first eight, and feedback cut short inside them keeps none, rather than being dropped. An older viewer sends no
+    session low. A taken-back packet also comes off the estimator's lost bytes, from the request it was charged
+    with. The FEC trigger keeps each frame's requested losses apart: a frame whose losses were all only late stops
+    keeping FEC on, without touching another frame's. A frame stays a loss when its last packet was requested while
+    a tail probe's copy of it was on its way (that copy can arrive early, so the packet isn't taken back) or when a
+    repeat had to be sent again. A frame resolved by a later frame's report keeps what it was charged, and holds the
+    window, until its own report arrives. Feedback naming more than eight ranges keeps the first eight, and feedback
+    cut short inside them keeps none, rather than being dropped. An older viewer sends no
     ranges and the host counts as before; an older host ignores the flag and the bytes after it.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are

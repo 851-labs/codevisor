@@ -404,15 +404,13 @@ impl Sender {
         for &(start, count) in late.ranges() {
             let end = (usize::from(start) + usize::from(count)).min(charges.per_index.len());
             let slots = charges.per_index.get_mut(usize::from(start).min(end)..end).unwrap_or_default();
-            for slot in slots.iter_mut().filter(|slot| slot.is_some_and(|charge| charge.window == window)) {
-                if let Some(charge) = slot.take() {
-                    self.estimator.take_back_lost(charge.lost_at, charge.bytes);
-                    packets += 1;
-                }
+            for charge in slots.iter_mut().filter_map(Option::take) {
+                self.estimator.take_back_lost(charge.lost_at, charge.bytes);
+                packets += u64::from(charge.window == window);
             }
         }
         self.loss.nacked -= packets.min(self.loss.nacked);
-        if packets > 0 && !charges.standing() {
+        if !charges.standing() {
             self.nack_losses.remove(&(stream_id, number));
         }
     }
@@ -1034,6 +1032,22 @@ mod tests {
         host.reported(0, &[4], 1);
 
         assert!(host.sender.recent_loss(host.now), "its first resend was lost too");
+    }
+
+    #[test]
+    fn a_late_original_charged_in_the_window_before_still_comes_off_the_estimate() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.now += 5 * MS;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW - 10 * MS);
+        host.sender.fec_ratio(host.now);
+        assert_eq!(host.sender.loss.nacked, 0, "the window rolled");
+
+        host.now += 20 * MS;
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+        assert!(!host.sender.recent_loss(host.now));
     }
 
     #[test]
