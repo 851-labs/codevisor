@@ -57,7 +57,7 @@ const candidate = (
   const env = environmentOf(system.readText(`/proc/${pid}/environ`))
   const kind = kindOf(env)
   if (kind === undefined || env[codevisorsMark] !== undefined) return undefined
-  if (env["DISPLAY"] !== undefined && env["DISPLAY"] === search.ignoreDisplay) return undefined
+  if (sameDisplay(env["DISPLAY"], search.ignoreDisplay)) return undefined
   if (!belongs(system, pid, env, search)) return undefined
 
   const display = search.display ?? env["DISPLAY"]
@@ -84,7 +84,12 @@ const belongs = (
 }
 
 const showsTheDisplay = (env: Readonly<Record<string, string>>, display?: string): boolean =>
-  display === undefined || env["DISPLAY"] === undefined || env["DISPLAY"] === display
+  display === undefined || env["DISPLAY"] === undefined || sameDisplay(env["DISPLAY"], display)
+
+const sameDisplay = (one: string | undefined, other: string | undefined): boolean =>
+  one !== undefined && other !== undefined && withoutScreen(one) === withoutScreen(other)
+
+const withoutScreen = (display: string): string => display.replace(/^(:\d+)\.\d+$/, "$1")
 
 const isLive = (system: SessionSystem, display: string | undefined): boolean => {
   const number = /^:(\d+)(\.\d+)?$/.exec(display ?? "")?.[1]

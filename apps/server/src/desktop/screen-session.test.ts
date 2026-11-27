@@ -103,6 +103,15 @@ describe("the graphical session the server's account has at the screen", () => {
       })
     })
 
+    it("takes a process whose display names a screen of logind's display, as :0.0 does", () => {
+      const system = at({ 500: { env: { ...atTheMonitor, DISPLAY: ":0.0" }, session: "9" } })
+
+      expect(ownGraphicalSession(system, { session: "9", display: ":0" })).toMatchObject({
+        process: 500,
+        display: ":0"
+      })
+    })
+
     it("finds nothing when no process of that session is left", () => {
       expect(ownGraphicalSession(at({ 400: leftOver }), { session: "9" })).toBeUndefined()
     })
