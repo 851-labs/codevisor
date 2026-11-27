@@ -45,6 +45,7 @@ export const DesktopStatus = Schema.Struct({
   startsAtBoot: Schema.Boolean,
   startAtBootHint: Schema.optional(Schema.String),
   logHint: Schema.String,
-  screen: Schema.optional(ScreenStatus)
+  screen: Schema.optional(ScreenStatus),
+  setupCommand: Schema.optional(Schema.String)
 })
 export type DesktopStatus = typeof DesktopStatus.Type

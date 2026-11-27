@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { makeDesktopManager } from "./desktop-manager.js"
 import {
   APT_UPDATE_LOOP,
   AS_ROOT,
@@ -7,6 +8,8 @@ import {
   CONFIG,
   DATA_DIR,
   fakeMachine,
+  LOGS_DIR,
+  RUNNER,
   settled,
   TIME_LIMIT,
   UBUNTU,
@@ -67,6 +70,27 @@ describe("what a Linux machine needs before it has a desktop", () => {
     await machine.manager.status()
     expect(await machine.manager.status()).not.toHaveProperty("sudo")
     expect(machine.commands.filter((line) => line.startsWith("sudo"))).toEqual([])
+  })
+
+  it("says how to run its own setup in a terminal on the machine, whatever is on that terminal's PATH", async () => {
+    const machine = fakeMachine({ files: UBUNTU })
+    expect(await machine.manager.status()).toMatchObject({
+      setupCommand: "/opt/codevisor/bin/node /opt/codevisor/cli.js desktop setup"
+    })
+  })
+
+  it("names the server's data folder in that command when it isn't the account's default", async () => {
+    const machine = fakeMachine({ files: UBUNTU })
+    const elsewhere = makeDesktopManager({
+      system: machine.system,
+      dataDir: "/srv/codevisor/data",
+      logsDir: LOGS_DIR,
+      runner: RUNNER,
+      changed: () => undefined
+    })
+    expect((await elsewhere.status()).setupCommand).toBe(
+      "env CODEVISOR_DATA_DIR=/srv/codevisor/data /opt/codevisor/bin/node /opt/codevisor/cli.js desktop setup"
+    )
   })
 
   it("says whether the desktop will start at boot, and how to make it", async () => {

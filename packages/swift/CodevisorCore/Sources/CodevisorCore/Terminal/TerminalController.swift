@@ -27,6 +27,7 @@ public final class TerminalController {
   private weak var renderer: (any TerminalRenderer)?
   private var pending: [(output: TerminalOutput, replayed: Bool)] = []
   private var opened = false
+  private var firstInput: String?
   private var ownSize: (cols: Int, rows: Int)?
   private var lastUserInput: ContinuousClock.Instant?
   static let userInputWindow: Duration = .milliseconds(500)
@@ -171,10 +172,22 @@ public final class TerminalController {
     }
   }
 
+  public func typeOnceTheShellSpeaks(_ text: String) {
+    firstInput = text
+  }
+
+  private func typeFirstInput() {
+    guard let text = firstInput else { return }
+
+    firstInput = nil
+    transport.sendInput(text)
+  }
+
   private func deliver(_ output: TerminalOutput, replayed: Bool) {
     if !replayed {
       predictor.received(output.text)
       publishPrediction()
+      typeFirstInput()
     }
     guard let renderer else {
       pending.append((output, replayed))

@@ -170,6 +170,7 @@ final class GhosttyTerminalSurface: TerminalSurface {
       config: descriptor.serverConfig,
       terminalKey: descriptor.terminalKey,
       cwd: descriptor.workingDirectory)
+    if let command = descriptor.firstCommand { controller.typeOnceTheShellSpeaks("\(command)\r") }
     hostIO = GhosttyHostIO.make(for: controller)
     var config = Ghostty.SurfaceConfiguration()
     config.hostIO = hostIO.surfaceIO

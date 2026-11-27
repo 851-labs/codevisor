@@ -19,6 +19,7 @@ final class TerminalPane: Pane, Identifiable {
   @ObservationIgnored var onContentAttached: (() -> Void)?
 
   @ObservationIgnored private var _surface: (any TerminalSurface)?
+  @ObservationIgnored private var firstCommand: String?
 
   private(set) var surfaceGeneration = 0
 
@@ -32,11 +33,15 @@ final class TerminalPane: Pane, Identifiable {
       terminalKey: context.terminalKey,
       workspaceRootDirectory: context.workspaceRootDirectory
     )
+    firstCommand = TerminalFirstCommands.shared.take(forPane: context.paneId)
   }
 
   func ensureSurface() -> any TerminalSurface {
     if let surface = _surface { return surface }
-    let surface = TerminalRuntime.factory.makeSurface(descriptor: descriptor)
+    var launch = descriptor
+    launch.firstCommand = firstCommand
+    firstCommand = nil
+    let surface = TerminalRuntime.factory.makeSurface(descriptor: launch)
     surface.onRestartRequest = { [weak self] in self?.restart() }
     surface.onPaneCommand = { [weak self] command in self?.onGroupCommand?(command) }
     surface.onFocusChanged = { [weak self] focused in self?.onFocusChanged?(focused) }

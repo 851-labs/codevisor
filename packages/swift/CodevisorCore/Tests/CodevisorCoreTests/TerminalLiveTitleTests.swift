@@ -78,6 +78,7 @@ struct TerminalLiveTitleTests {
       ("Terminal 3", "htop", "htop"),
       ("Terminal", "htop", "htop"),
       ("Dev server", "node", "Dev server"),
+      ("Desktop setup", "/usr/local/bin/node /opt/codevisor/apps/server/dist/cli.js desktop setup", "Desktop setup"),
       ("Terminal 3", " \n ", "Terminal"),
     ])
   func paneNamePrecedence(name: String, liveTitle: String, shown: String) {

@@ -4,10 +4,13 @@ import SwiftUI
 struct WorkspaceInspectorCard<Content: View>: View {
   let title: String
   @Binding var isExpanded: Bool
+  var accessory: AnyView?
   @ViewBuilder let content: Content
   @Environment(\.controlActiveState) private var controlActiveState
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isHovered = false
+
+  private static var accessoryInset: CGFloat { 40 }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -48,6 +51,7 @@ struct WorkspaceInspectorCard<Content: View>: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .overlay(alignment: .trailing) { accessory.padding(.trailing, Self.accessoryInset) }
     .onHover { isHovered = $0 }
     .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     .accessibilityLabel(title)

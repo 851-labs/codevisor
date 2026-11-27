@@ -60,8 +60,10 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       "to the account with a one-time invite, and wait until it's online. Use for requests like " +
       "'set up my new VPS as a Codevisor machine'. `ssh` is a destination like root@203.0.113.7 " +
       "or a Host alias; the host needs curl and key-based SSH access from this machine. " +
-      "Takes a few minutes. Returns the new machine (also in machines.list()). Same as " +
-      "`codevisor machines add`.",
+      "Takes a few minutes. Pass `desktop: true` only when the user asked for a desktop on a " +
+      "Linux host: it also installs Xfce and TigerVNC there (several hundred MB, some minutes " +
+      "more) so the machine's desktop can be watched from Codevisor. Returns the new machine " +
+      "(also in machines.list()). Same as `codevisor machines add`.",
     "POST",
     "/v1/machines/add",
     { body: AddMachineRequest }

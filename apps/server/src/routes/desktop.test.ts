@@ -65,6 +65,11 @@ const start = async (manager: DesktopManager | undefined, screen?: ScreenShare) 
 }
 
 describe("the desktop routes", () => {
+  it("answer 501 on a server that isn't Linux, which an app tells apart from an older server's 404", async () => {
+    const { call } = await start(undefined)
+    expect((await call("GET")).status).toBe(501)
+  })
+
   it("map each request to one thing the desktop manager does", async () => {
     const { manager, calls } = recordingManager()
     const { call } = await start(manager)

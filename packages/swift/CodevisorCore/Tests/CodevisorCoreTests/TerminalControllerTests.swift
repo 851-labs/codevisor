@@ -257,6 +257,31 @@ struct TerminalControllerTests {
     #expect(renderer.predictions.last == .some(nil))
     controller.detach()
   }
+
+  @Test("A command given to a new terminal is typed once, after the shell's first words", .timeLimit(.minutes(1)))
+  func typesItsFirstCommandWhenTheShellIsUp() async throws {
+    let socket = StreamSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
+    let controller = TerminalController(
+      config: CodevisorServerConfig(
+        baseURL: URL(string: "https://fixture.invalid")!,
+        requestTransport: Terminal(head: 1),
+        webSocketTransport: SocketTransport(socket: socket)
+      ),
+      terminalKey: "s", cwd: "/")
+    let renderer = RecordingRenderer()
+    controller.attach(renderer)
+    controller.typeOnceTheShellSpeaks("codevisor desktop setup\r")
+    controller.start(cols: 80, rows: 24)
+    #expect(socket.inputs.isEmpty)
+
+    socket.deliver(.string(#"{"type":"output","seq":1,"data":"$ "}"#))
+    await renderer.didWrite.wait(for: 1)
+    socket.deliver(.string(#"{"type":"output","seq":2,"data":"==> Checking this machine"}"#))
+    await renderer.didWrite.wait(for: 2)
+    await socket.didSend.wait(for: 2)
+    #expect(socket.inputs == ["codevisor desktop setup\r"])
+    controller.detach()
+  }
 }
 
 private final class LockedInstant: @unchecked Sendable {

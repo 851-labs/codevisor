@@ -140,6 +140,12 @@ public final class MachineController {
     return machine
   }
 
+  public func linuxDesktopMachine(for id: String) -> CodevisorMachine? {
+    guard statusByMachineId[id]?.isLinux == true, let machine = machine(for: id), !machine.isLocal
+    else { return nil }
+    return machine
+  }
+
   public func sandboxProfile(forMachineId id: String) -> SandboxMachineProfile? {
     guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral else { return nil }
     return sandboxMachineProfiles.profile(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId)

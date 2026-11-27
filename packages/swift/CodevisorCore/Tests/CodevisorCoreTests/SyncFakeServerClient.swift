@@ -14,6 +14,7 @@ struct FakeWorkspaceSnapshot: Sendable {
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   var _infoCloudDeviceId: String?
   var _infoFeatures: [String]?
+  var _infoPlatform = "darwin"
   var _infoMaxUploadBytes: Int?
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?

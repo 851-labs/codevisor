@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import { setTimeout as delay } from "node:timers/promises"
 
 import type {
+  AddedDesktop,
   AddMachineRequest,
   CloudMachinePresence,
   MachineInviteResponse,
@@ -15,6 +16,7 @@ import type { MachineLink } from "./machine-link.js"
 export const DEFAULT_INSTALL_URL = "https://www.codevisor.dev/install.sh"
 
 const SSH_TIMEOUT_MS = 10 * 60 * 1000
+const DESKTOP_SETUP_EXTRA_MS = 15 * 60 * 1000
 const APPEAR_TIMEOUT_MS = 60 * 1000
 const APPEAR_POLL_MS = 1000
 const OUTPUT_TAIL_LINES = 30
@@ -48,9 +50,13 @@ export interface MachineEnrollmentOptions {
   readonly now?: () => number
 }
 
+export interface AddedMachine extends MachineSummary {
+  readonly desktop?: AddedDesktop
+}
+
 export interface MachineEnrollment {
   readonly invite: (options?: MachineInviteOptions) => Promise<MachineInviteResponse>
-  readonly add: (request: AddMachineRequest, signal?: AbortSignal) => Promise<MachineSummary>
+  readonly add: (request: AddMachineRequest, signal?: AbortSignal) => Promise<AddedMachine>
   readonly remove: (machine: string) => Promise<ReadonlyArray<MachineSummary>>
 }
 
@@ -60,6 +66,7 @@ export const remoteInstallScript = (options: {
   readonly inviteCode: string
   readonly installUrl: string
   readonly name?: string
+  readonly desktop?: boolean
 }): string =>
   [
     "set -eu",
@@ -69,6 +76,7 @@ export const remoteInstallScript = (options: {
     ...(options.name === undefined
       ? []
       : [`CODEVISOR_MACHINE_NAME=${shellQuote(options.name)}`, "export CODEVISOR_MACHINE_NAME"]),
+    ...(options.desktop === true ? ["CODEVISOR_DESKTOP=1", "export CODEVISOR_DESKTOP"] : []),
     `url=${shellQuote(options.installUrl)}`,
     'command -v curl >/dev/null 2>&1 || { echo "codevisor: this host needs curl" >&2; exit 1; }',
     'curl -fsSL "$url" | sh',
@@ -171,6 +179,14 @@ const successfulInstallOutput = (run: SshRun, destination: string, inviteCode: s
   return output
 }
 
+const desktopIsUp = /The desktop is (ready|already running)/
+const desktopStepStarted = /Setting up a desktop/
+
+const reachedTheDesktop = (output: string): boolean => desktopStepStarted.test(output)
+
+const desktopOutcome = (output: string): AddedDesktop =>
+  desktopIsUp.test(output) ? "ready" : "not-set-up"
+
 export const makeMachineEnrollment = (options: MachineEnrollmentOptions): MachineEnrollment => {
   const { cloud, link } = options
   /* v8 ignore next */
@@ -220,21 +236,37 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
     )
   }
 
-  const add = async (request: AddMachineRequest, signal?: AbortSignal): Promise<MachineSummary> => {
+  const joinedAnyway = async (
+    before: ReadonlySet<string>,
+    signal: AbortSignal | undefined
+  ): Promise<AddedMachine | undefined> => {
+    const joined = await waitForJoined(before, signal)
+    if (joined === undefined) return undefined
+
+    return { ...(await summaryFor(joined)), desktop: "not-set-up" }
+  }
+
+  const add = async (request: AddMachineRequest, signal?: AbortSignal): Promise<AddedMachine> => {
     const destination = request.ssh.trim()
     const name = validateEnrollmentRequest(request, destination)
     const { code } = await invite()
     const before = new Set((cloud.machines() ?? []).map((presence) => presence.deviceId))
-    const timeout = AbortSignal.timeout(SSH_TIMEOUT_MS)
+    const withDesktop = request.desktop === true
+    const timeout = AbortSignal.timeout(SSH_TIMEOUT_MS + (withDesktop ? DESKTOP_SETUP_EXTRA_MS : 0))
     const run = await runSsh(
       sshArgs(destination, request.sshPort),
       remoteInstallScript({
         inviteCode: code,
         installUrl: options.installUrl ?? DEFAULT_INSTALL_URL,
-        ...(name === undefined ? {} : { name })
+        ...(name === undefined ? {} : { name }),
+        ...(withDesktop ? { desktop: true } : {})
       }),
       signal === undefined ? timeout : AbortSignal.any([signal, timeout])
     )
+    if (withDesktop && run.exitCode !== 0 && reachedTheDesktop(run.output)) {
+      const added = await joinedAnyway(before, signal)
+      if (added !== undefined) return added
+    }
     const output = successfulInstallOutput(run, destination, code)
     const joined = await waitForJoined(before, signal)
     if (joined === undefined) {
@@ -243,7 +275,8 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
         `Codevisor was installed on ${destination}, but it didn't appear on the account. Its output:\n${output}`
       )
     }
-    return summaryFor(joined)
+    const machine = await summaryFor(joined)
+    return withDesktop ? { ...machine, desktop: desktopOutcome(run.output) } : machine
   }
 
   const remove = async (machine: string): Promise<ReadonlyArray<MachineSummary>> => {

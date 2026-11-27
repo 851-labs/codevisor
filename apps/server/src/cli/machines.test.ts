@@ -55,6 +55,31 @@ describe("codevisor machines", () => {
     expect(logs.at(-1)).toBe("✓ hetzner-1 is on your account (online).")
   })
 
+  it("asks for a desktop on the new machine only with --desktop, and says whether it came up", async () => {
+    const { deps, logs, requests } = world({
+      "POST /v1/machines/add": { status: 201, body: { machine: hetzner, desktop: "ready" } }
+    })
+    expect(await machinesAddCommand(deps, { ssh: "root@h", desktop: true })).toBe(0)
+    expect(requests.at(-1)?.body).toEqual({ ssh: "root@h", desktop: true })
+    expect(logs).toEqual([
+      "Installing Codevisor on root@h with a desktop and adding it to your account…",
+      "✓ hetzner-1 is on your account (online).",
+      "  Its desktop is running. Open it from the machine in Codevisor."
+    ])
+    expect(await machinesAddCommand(deps, { ssh: "root@h", desktop: false })).toBe(0)
+    expect(requests.at(-1)?.body).toEqual({ ssh: "root@h" })
+  })
+
+  it("says plainly when the desktop that was asked for wasn't set up, and still counts the machine as added", async () => {
+    const { deps, logs } = world({
+      "POST /v1/machines/add": { status: 201, body: { machine: hetzner, desktop: "not-set-up" } }
+    })
+    expect(await machinesAddCommand(deps, { ssh: "root@h", desktop: true })).toBe(0)
+    expect(logs.at(-1)).toBe(
+      "  Its desktop wasn't set up. The Desktop card on the machine in Codevisor says why and offers to try again."
+    )
+  })
+
   it("lists machines with where they came from", async () => {
     const { deps, logs } = world({
       "GET /v1/machines": {

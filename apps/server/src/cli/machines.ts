@@ -1,4 +1,5 @@
 import {
+  type AddedDesktop,
   AddMachineResponse,
   MachineInviteResponse,
   MachinesResponse,
@@ -66,30 +67,47 @@ export interface MachinesAddOptions extends CommandOptions {
   readonly ssh: string
   readonly name?: string
   readonly sshPort?: number
+  readonly desktop?: boolean
 }
+
+const addTimeoutMs = 11 * 60 * 1000
+const desktopSetupExtraMs = 17 * 60 * 1000
 
 export const machinesAddCommand = async (
   deps: CliDeps,
   options: MachinesAddOptions
 ): Promise<number> => {
   const port = await resolvePort(deps, options.port)
-  deps.log(`Installing Codevisor on ${options.ssh} and adding it to your account…`)
+  const withDesktop = options.desktop === true
+  deps.log(
+    withDesktop
+      ? `Installing Codevisor on ${options.ssh} with a desktop and adding it to your account…`
+      : `Installing Codevisor on ${options.ssh} and adding it to your account…`
+  )
   const response = await deps.fetchJson(machinesUrl(port, "/add"), {
     method: "POST",
-    timeoutMs: 11 * 60 * 1000,
+    timeoutMs: addTimeoutMs + (withDesktop ? desktopSetupExtraMs : 0),
     body: {
       ssh: options.ssh,
       ...(options.name === undefined ? {} : { name: options.name }),
-      ...(options.sshPort === undefined ? {} : { sshPort: options.sshPort })
+      ...(options.sshPort === undefined ? {} : { sshPort: options.sshPort }),
+      ...(withDesktop ? { desktop: true } : {})
     }
   })
   if (response?.status !== 201) {
     deps.error(`Couldn't add ${options.ssh}: ${routeFailure(response, port)}`)
     return 1
   }
-  const { machine } = Schema.decodeUnknownSync(AddMachineResponse)(response.body)
+  const { machine, desktop } = Schema.decodeUnknownSync(AddMachineResponse)(response.body)
   deps.log(`✓ ${machine.name} is on your account (${machine.online ? "online" : "offline"}).`)
+  if (withDesktop) deps.log(desktopLine(desktop))
   return 0
+}
+
+const desktopLine = (desktop: AddedDesktop | undefined): string => {
+  if (desktop === "ready") return "  Its desktop is running. Open it from the machine in Codevisor."
+
+  return "  Its desktop wasn't set up. The Desktop card on the machine in Codevisor says why and offers to try again."
 }
 
 export const machinesRemoveCommand = async (

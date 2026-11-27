@@ -11,6 +11,7 @@ struct WorkspaceInspectorMachineView: View {
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
   let onOpenDesktop: () -> Void
+  let onOpenTerminal: ((TerminalToOpen) -> Void)?
   @Environment(AppEnvironment.self) private var environment
   @State private var stats: (serverId: String, stats: ServerMachineStats)?
   @State private var latency: (serverId: String, milliseconds: Double)?
@@ -19,13 +20,9 @@ struct WorkspaceInspectorMachineView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 10) {
         if let desktop {
-          WorkspaceInspectorCard(title: "Desktop", isExpanded: desktopExpansion) {
-            MachineDesktopPreview(
-              machine: desktop, isStreaming: isActive && desktopExpansion.wrappedValue,
-              onOpen: onOpenDesktop
-            )
-            .id(desktop.id)
-          }
+          MachineDesktopInspectorCard(
+            machine: desktop, isExpanded: desktopExpansion, isActive: isActive, onOpen: onOpenDesktop,
+            onOpenTerminal: onOpenTerminal)
         }
         if let stats, stats.serverId == serverId {
           WorkspaceInspectorMachineSection(
