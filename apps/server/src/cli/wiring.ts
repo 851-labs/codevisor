@@ -126,15 +126,21 @@ export const makeMachinesCommand = (runCli: RunCli) => {
         Flag.withDescription("SSH port, when not 22 or set in ~/.ssh/config"),
         Flag.optional
       ),
+      desktop: Flag.boolean("desktop").pipe(
+        Flag.withDescription(
+          "Also set up a desktop on the new machine (Linux), to watch and control from Codevisor"
+        )
+      ),
       port: portFlag
     },
-    ({ ssh, name, sshPort, port }) =>
+    ({ ssh, name, sshPort, desktop: withDesktop, port }) =>
       runCli((deps) =>
         machinesAddCommand(deps, {
           ssh,
           port: Option.getOrUndefined(port),
           ...(Option.isSome(name) ? { name: name.value } : {}),
-          ...(Option.isSome(sshPort) ? { sshPort: sshPort.value } : {})
+          ...(Option.isSome(sshPort) ? { sshPort: sshPort.value } : {}),
+          ...(withDesktop ? { desktop: true } : {})
         })
       )
   ).pipe(Command.withDescription("Install Codevisor on a host over SSH and add it to your account"))

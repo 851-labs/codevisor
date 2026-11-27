@@ -8,6 +8,7 @@ struct TerminalLaunchDescriptor {
   let machine: CodevisorMachine
   let serverConfig: CodevisorServerConfig
   let workingDirectory: String
+  var firstCommand: String?
 
   static func make(
     session: ChatSession?,

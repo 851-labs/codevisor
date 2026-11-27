@@ -35,7 +35,8 @@ export const routeMachineEnrollment = async (
     response.once("close", () => {
       if (!response.writableFinished) controller.abort(new Error("the caller cancelled"))
     })
-    writeJson(response, 201, { machine: await enrollment.add(body, controller.signal) })
+    const { desktop, ...machine } = await enrollment.add(body, controller.signal)
+    writeJson(response, 201, { machine, ...(desktop === undefined ? {} : { desktop }) })
     return true
   }
   const machine = decodeURIComponent(removal![1]!)

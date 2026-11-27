@@ -7,6 +7,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var serverId: String?
   public var features: Set<String>
   public var maxUploadBytes: Int?
+  public var platform: String?
 
   public init(
     isReachable: Bool,
@@ -14,7 +15,8 @@ public struct MachineStatus: Sendable, Equatable {
     cloudDeviceId: String? = nil,
     serverId: String? = nil,
     features: Set<String> = [],
-    maxUploadBytes: Int? = nil
+    maxUploadBytes: Int? = nil,
+    platform: String? = nil
   ) {
     self.isReachable = isReachable
     self.label = label
@@ -22,6 +24,7 @@ public struct MachineStatus: Sendable, Equatable {
     self.serverId = serverId
     self.features = features
     self.maxUploadBytes = maxUploadBytes
+    self.platform = platform
   }
 
   public static let legacyUploadLimitBytes = 32 * 1024 * 1024
@@ -32,6 +35,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
   public var supportsLivePreview: Bool { features.contains("live-preview-v1") }
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
+  public var isLinux: Bool { platform == "linux" }
 }
 
 public func codevisorMachineIsThisMac(

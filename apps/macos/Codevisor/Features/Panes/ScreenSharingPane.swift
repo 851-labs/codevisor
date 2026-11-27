@@ -15,6 +15,7 @@ final class ScreenSharingPane: Pane {
   let machineName: String
   let isLocal: Bool
   let role: ScreenSharingViewerRole
+  let opensTerminals: Bool
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
   var onFocusChanged: ((Bool) -> Void)? { didSet { surface?.onFocusChanged = onFocusChanged } }
   var onFocus: (() -> Void)?
@@ -24,7 +25,7 @@ final class ScreenSharingPane: Pane {
   private var soundAppliedTo: ObjectIdentifier?
   private var savedSettingsAppliedTo: ObjectIdentifier?
   private var clipboardAppliedTo: ObjectIdentifier?
-  private let machineId: String
+  let machineId: String
   private let connection: (kind: String, address: String?)
   private let surface: ScreenSharingDesktopSurface?
   private var observation: ObserveToken?
@@ -34,15 +35,16 @@ final class ScreenSharingPane: Pane {
   convenience init(context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole = .tab) {
     self.init(
       id: descriptor.id, machine: context.machine, role: role, preferences: descriptor.screenSharing ?? .init(),
-      attaches: context.workspaceId != nil)
+      attaches: context.workspaceId != nil, opensTerminals: context.workspaceId != nil && context.sessionId != nil)
   }
 
   init(
     id: UUID = UUID(), machine: CodevisorMachine, role: ScreenSharingViewerRole,
-    preferences: ScreenSharingPanePreferences, attaches: Bool = true
+    preferences: ScreenSharingPanePreferences, attaches: Bool = true, opensTerminals: Bool = false
   ) {
     self.id = id
     self.role = role
+    self.opensTerminals = opensTerminals
     seedDisplayId = preferences.preferredDisplayId
     machineName = machine.name
     machineId = machine.id
@@ -193,10 +195,13 @@ final class ScreenSharingPane: Pane {
 
 private struct ScreenSharingPaneView: View {
   let pane: ScreenSharingPane
+  @Environment(AppEnvironment.self) private var environment
 
   var body: some View {
     ZStack {
-      if let store = pane.store {
+      if let setup, !setup.state.showsDesktop(sharedByMachine: sharesDesktop) {
+        MachineDesktopSetupPane(store: setup, view: pane.id, onOpenTerminal: openTerminal(setup))
+      } else if let store = pane.store {
         if let failure = store.failure {
           failed(failure, store)
         } else {
@@ -208,6 +213,28 @@ private struct ScreenSharingPaneView: View {
       }
     }
     .background { ScreenSharingOnScreen { pane.onScreenChanged($0) } }
+    .onChange(of: sharesDesktop) { _, shares in
+      if shares { pane.store?.send(.retryButtonTapped) }
+    }
+    .modifier(
+      MachineDesktopSetupUpkeepIfAny(
+        machineId: pane.machineId, machineName: machineName, view: pane.id, store: setup))
+  }
+
+  private func openTerminal(_ setup: StoreOf<MachineDesktopSetup>) -> (() -> Void)? {
+    guard pane.opensTerminals, let command = pane.onGroupCommand else { return nil }
+
+    return { command(.openTerminal(typing: setup.terminalCommand)) }
+  }
+
+  private var sharesDesktop: Bool { environment.machines.desktopMachine(for: pane.machineId) != nil }
+
+  private var machineName: String { environment.machines.machine(for: pane.machineId)?.name ?? pane.machineName }
+
+  private var setup: StoreOf<MachineDesktopSetup>? {
+    guard environment.machines.linuxDesktopMachine(for: pane.machineId) != nil else { return nil }
+
+    return MachineDesktopSetups.shared.store(for: pane.machineId, named: machineName, machines: environment.machines)
   }
 
   private func failed(_ sentence: String, _ store: StoreOf<ScreenSharingViewer>) -> some View {

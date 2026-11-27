@@ -55,6 +55,8 @@ extension SessionContainerView {
       closeActiveLeaf()
     case .reopenClosedPane:
       reopenClosedPane()
+    case let .openTerminal(command):
+      openTerminal(typing: command)
     }
     return true
   }

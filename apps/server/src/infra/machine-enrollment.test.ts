@@ -98,6 +98,13 @@ const joinAs = (name: string, extra: Partial<CloudMachinePresence> = {}) => {
   }
 }
 
+const desktopAskedBy = (script: string): string =>
+  spawnSync("sh", ["-s"], {
+    input: script.replace(/url=.*\n[\s\S]*$/, 'printf "%s" "${CODEVISOR_DESKTOP:-unset}"\n'),
+    encoding: "utf8",
+    env: { PATH: process.env["PATH"] }
+  }).stdout
+
 describe("remoteInstallScript", () => {
   it("runs as a POSIX script that hands the installer the invite and name", () => {
     const script = remoteInstallScript({
@@ -112,6 +119,13 @@ describe("remoteInstallScript", () => {
     const result = spawnSync("sh", ["-s"], { input: probe, encoding: "utf8" })
     expect(result.stdout).toBe(`${CODE}|1|a'b"c$(touch /tmp/x)`)
   })
+
+  it("asks the installer for a desktop only when one was asked for", () => {
+    const base = { inviteCode: CODE, installUrl: "https://example.test/install.sh" }
+    expect(desktopAskedBy(remoteInstallScript({ ...base, desktop: true }))).toBe("1")
+    expect(desktopAskedBy(remoteInstallScript(base))).toBe("unset")
+    expect(desktopAskedBy(remoteInstallScript({ ...base, desktop: false }))).toBe("unset")
+  })
 })
 
 describe("sshArgs", () => {
@@ -122,6 +136,24 @@ describe("sshArgs", () => {
     expect(args.slice(-3)).toEqual(["--", "root@203.0.113.7", "sh -s"])
     expect(args.join(" ")).toContain("-p 2222")
   })
+})
+
+const readyInstall = (script: string, machines: CloudMachinePresence[]): SshRun => ({
+  ...joinAs("hetzner-1")(script, machines),
+  output:
+    "==> Setting up a desktop\n==> The desktop is ready. Open it from this machine in Codevisor."
+})
+
+const slowInstall = (script: string, machines: CloudMachinePresence[]): SshRun => ({
+  ...joinAs("hetzner-1")(script, machines),
+  exitCode: null,
+  output:
+    "\u001B[1;32m==>\u001B[0m Setting up a desktop\n==> Installing Xfce and TigerVNC with apt (about 640 MB)"
+})
+
+const unreachableHost = (): SshRun => ({
+  exitCode: 255,
+  output: "ssh: connect to host box port 22: refused"
 })
 
 describe("machine enrollment", () => {
@@ -138,6 +170,53 @@ describe("machine enrollment", () => {
     expect(sshCalls).toHaveLength(1)
     expect(sshCalls[0]!.args.join(" ")).not.toContain(CODE)
     expect(sshCalls[0]!.stdin).toContain(CODE)
+  })
+
+  it("has the installer set up a desktop on the new machine when asked, and not otherwise", async () => {
+    const withOne = harness({ onSsh: joinAs("hetzner-1") })
+    expect(await withOne.enrollment.add({ ssh: "root@203.0.113.7", desktop: true })).toMatchObject({
+      desktop: "not-set-up"
+    })
+    expect(desktopAskedBy(withOne.sshCalls[0]!.stdin)).toBe("1")
+
+    const without = harness({ onSsh: joinAs("hetzner-2") })
+    expect(await without.enrollment.add({ ssh: "root@203.0.113.8" })).not.toHaveProperty("desktop")
+    expect(desktopAskedBy(without.sshCalls[0]!.stdin)).toBe("unset")
+  })
+
+  it("reads from the installer's output whether the desktop came up", async () => {
+    const { enrollment } = harness({ onSsh: readyInstall })
+    expect(await enrollment.add({ ssh: "root@203.0.113.7", desktop: true })).toMatchObject({
+      name: "hetzner-1",
+      desktop: "ready"
+    })
+  })
+
+  it("counts a machine that joined before its desktop setup ran out of time as added, without a desktop", async () => {
+    const { enrollment } = harness({ onSsh: slowInstall })
+    expect(await enrollment.add({ ssh: "root@203.0.113.7", desktop: true })).toMatchObject({
+      name: "hetzner-1",
+      desktop: "not-set-up"
+    })
+
+    const plain = harness({ onSsh: slowInstall })
+    await expect(plain.enrollment.add({ ssh: "root@203.0.113.7" })).rejects.toMatchObject({
+      status: 502
+    })
+  })
+
+  it("reports a failure before the desktop step at once, without waiting for a join", async () => {
+    let sleeps = 0
+    const { enrollment } = harness({
+      onSsh: unreachableHost,
+      onSleep: () => {
+        sleeps += 1
+      }
+    })
+    await expect(enrollment.add({ ssh: "box", desktop: true })).rejects.toMatchObject({
+      status: 502
+    })
+    expect(sleeps).toBe(0)
   })
 
   it("waits for the joined machine to come online", async () => {

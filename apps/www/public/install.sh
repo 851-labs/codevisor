@@ -356,8 +356,24 @@ onboarding_just_dealt_with_the_desktop() {
     { [ "$onboarding_at_terminal" = "1" ] && [ -e "$data_dir/desktop-setup-failed" ]; }
 }
 
+set_up_desktop() {
+  if ! installed_cli_sets_up_desktops; then
+    note "This release of Codevisor can't set up a desktop yet. After an update, run:"
+    note "  $(service_user_command 'codevisor desktop setup')"
+    return 0
+  fi
+  say "Setting up a desktop"
+  [ "$service_running" = "1" ] || codevisor_cli start </dev/null >/dev/null 2>&1 || true
+  codevisor_cli desktop setup --yes </dev/null ||
+    note "The desktop wasn't set up. Try again with: $(service_user_command 'codevisor desktop setup')"
+}
+
 mention_desktop() {
   [ "$os" = "linux" ] || return 0
+  if [ "${CODEVISOR_DESKTOP:-0}" = "1" ]; then
+    set_up_desktop
+    return 0
+  fi
   ! desktop_is_set_up || return 0
   ! onboarding_just_dealt_with_the_desktop || return 0
   installed_cli_sets_up_desktops || return 0

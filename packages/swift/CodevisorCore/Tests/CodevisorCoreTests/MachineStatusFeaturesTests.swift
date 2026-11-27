@@ -81,4 +81,19 @@ struct MachineStatusFeaturesTests {
     #expect(controller.desktopMachine(for: remote.id)?.id == remote.id)
     #expect(controller.desktopMachine(for: CodevisorMachine.local.id) == nil)
   }
+
+  @Test("Every other Linux machine gets a Desktop card, with or without a desktop; other systems only with one")
+  func linuxMachinesGetADesktopCard() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoPlatform("linux")
+    let (controller, remote) = try makeController(fake: fake)
+    await controller.refreshStatus(for: remote.id)
+    #expect(controller.linuxDesktopMachine(for: remote.id)?.id == remote.id)
+    #expect(controller.desktopMachine(for: remote.id) == nil)
+
+    fake.configureInfoPlatform("darwin")
+    await controller.refreshStatus(for: remote.id)
+    #expect(controller.linuxDesktopMachine(for: remote.id) == nil)
+    #expect(controller.linuxDesktopMachine(for: CodevisorMachine.local.id) == nil)
+  }
 }

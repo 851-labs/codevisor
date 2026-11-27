@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import test, { describe } from "node:test"
 
 import { install } from "./install-test-support.mjs"
@@ -66,6 +68,79 @@ describe("install.sh and the Linux desktop", { concurrency: true }, () => {
 
   test("a server release from before the desktop command isn't told about it", async (t) => {
     const result = await install(t, { cli: withoutDesktops, env: quiet })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(desktopLines(result), [])
+  })
+
+  test("asked for a desktop (adding a machine with one), the installer sets it up instead of the hint", async (t) => {
+    const cli = [
+      'printf "%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
+      'case "$*" in "desktop setup --help"*) printf "  codevisor desktop setup [flags]\\n" ;; esac'
+    ].join("\n")
+    const result = await install(t, { cli, env: { ...quiet, CODEVISOR_DESKTOP: "1" } })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(readFileSync(join(result.root, "cli.log"), "utf8").trim().split("\n"), [
+      "desktop setup --help",
+      "start",
+      "desktop setup --yes"
+    ])
+    assert.match(result.stdout, /Setting up a desktop/)
+    assert.doesNotMatch(result.stdout, /Add a desktop/)
+  })
+
+  test("asked for a desktop where one is set up, the installer still runs setup, which reports it running", async (t) => {
+    const ours = JSON.stringify({
+      vnc: { socket: "/run/user/1000/d.sock" },
+      service: "systemd-user"
+    })
+    const cli = [
+      'case "$*" in',
+      '  "desktop setup --help"*) printf "  codevisor desktop setup [flags]\\n" ;;',
+      '  "desktop setup --yes"*) printf "==> The desktop is already running. Open it from this machine in Codevisor.\\n" ;;',
+      "esac"
+    ].join("\n")
+    const result = await install(t, {
+      cli,
+      env: { ...quiet, CODEVISOR_DESKTOP: "1" },
+      files: { [config]: ours }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /The desktop is already running/)
+    assert.doesNotMatch(result.stdout, /Add a desktop/)
+  })
+
+  test("a desktop setup that fails doesn't fail the install it was asked with", async (t) => {
+    const cli = [
+      'case "$*" in',
+      '  "desktop setup --help"*) printf "  codevisor desktop setup [flags]\\n" ;;',
+      '  "desktop setup --yes"*) exit 1 ;;',
+      "esac"
+    ].join("\n")
+    const result = await install(t, { cli, env: { ...quiet, CODEVISOR_DESKTOP: "1" } })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(
+      lastLine(result),
+      /The desktop wasn't set up\. Try again with: codevisor desktop setup$/
+    )
+  })
+
+  test("asked for a desktop on a release that has none, the installer says so and finishes", async (t) => {
+    const result = await install(t, {
+      cli: withoutDesktops,
+      env: { ...quiet, CODEVISOR_DESKTOP: "1" }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /can't set up a desktop yet/)
+    assert.doesNotMatch(result.stdout, /Setting up a desktop/)
+  })
+
+  test("asked for a desktop on a Mac, the installer does nothing about it", async (t) => {
+    const result = await install(t, {
+      cli: withDesktops,
+      platform: "Darwin",
+      architecture: "x86_64",
+      env: { CODEVISOR_INSTALL_SERVER: "1", CODEVISOR_DESKTOP: "1" }
+    })
     assert.equal(result.status, 0, result.stderr)
     assert.deepEqual(desktopLines(result), [])
   })

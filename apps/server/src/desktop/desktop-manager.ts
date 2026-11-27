@@ -26,7 +26,14 @@ import {
   ownXServerOn
 } from "./desktop-layout.js"
 import { desktopIsUp, whyDesktopIsDown } from "./desktop-liveness.js"
-import { installPlan, missingPrograms, osRelease, runAsRoot, sudoKind } from "./desktop-packages.js"
+import {
+  installPlan,
+  missingPrograms,
+  osRelease,
+  runAsRoot,
+  shellText,
+  sudoKind
+} from "./desktop-packages.js"
 import {
   type DesktopService,
   desktopServices,
@@ -86,6 +93,13 @@ const unmanaged =
 
 const notStartedBeside = (found: Shared): string =>
   `The desktop is set up but not shared: ${found.problem ?? "no reason found"}. It can't be started again while another Codevisor server on this account owns the desktop unit (${DESKTOP_UNIT}). Remove this desktop with \`codevisor desktop remove\`.`
+
+const setupCommandOf = (runner: RunnerCommand, dataDir: string, home: string): string => {
+  const command = [runner.program, ...runner.args.slice(0, 1), "desktop", "setup"]
+  if (dataDir === join(home, ".codevisor", "data")) return shellText(command)
+
+  return shellText(["env", `CODEVISOR_DATA_DIR=${dataDir}`, ...command])
+}
 
 const keeperOf = (runs: DesktopService, other: DesktopService): DesktopService =>
   runs.belongsToAnother() && other.isSetUp() ? other : runs
@@ -190,7 +204,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       ...(old === undefined ? {} : { oldDesktop: { units: old.units } }),
       startsAtBoot,
       ...(needsLinger ? { startAtBootHint: `sudo loginctl enable-linger ${system.account}` } : {}),
-      logHint: keeper.logHint
+      logHint: keeper.logHint,
+      setupCommand: setupCommandOf(options.runner, options.dataDir, system.home)
     }
   }
 

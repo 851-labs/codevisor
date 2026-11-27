@@ -26,11 +26,18 @@ export type MachineInviteResponse = typeof MachineInviteResponse.Type
 export const AddMachineRequest = Schema.Struct({
   ssh: Schema.String,
   name: Schema.optional(Schema.String),
-  sshPort: Schema.optional(Schema.Number)
+  sshPort: Schema.optional(Schema.Number),
+  desktop: Schema.optional(Schema.Boolean)
 })
 export type AddMachineRequest = typeof AddMachineRequest.Type
 
-export const AddMachineResponse = Schema.Struct({ machine: MachineSummary })
+export const AddedDesktop = Schema.Literals(["ready", "not-set-up"])
+export type AddedDesktop = typeof AddedDesktop.Type
+
+export const AddMachineResponse = Schema.Struct({
+  machine: MachineSummary,
+  desktop: Schema.optional(AddedDesktop)
+})
 export type AddMachineResponse = typeof AddMachineResponse.Type
 
 export const MachineCallOrigin = Schema.Struct({

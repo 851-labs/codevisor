@@ -14,7 +14,8 @@ extension MachineController {
         cloudDeviceId: info.cloudDeviceId,
         serverId: info.id,
         features: Set(info.features ?? []),
-        maxUploadBytes: info.maxUploadBytes
+        maxUploadBytes: info.maxUploadBytes,
+        platform: info.platform
       )
       connection.reportedIcon = info.icon
       connection.dataUpgradeProgress = nil

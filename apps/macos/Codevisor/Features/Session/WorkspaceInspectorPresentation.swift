@@ -167,7 +167,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let chat = harnessChat(for: inspected)
     let place = place(of: inspected, chat: chat, store: store)
     let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
-    let desktop = environment.machines.desktopMachine(for: workspace.serverId)
+    let desktop =
+      environment.machines.desktopMachine(for: workspace.serverId)
+      ?? environment.machines.linuxDesktopMachine(for: workspace.serverId)
     return WorkspaceInspectorView(
       workspace: workspace,
       project: chat.flatMap(project(of:)) ?? inspected.project,
@@ -199,6 +201,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
         MachineDesktopWindows.shared.present(desktop, environment: environment)
       },
+      opensTerminals: bot == nil && inspected.chat != nil,
       onReload: { Task { await reload(inspected, animatesHarness: true) } },
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(

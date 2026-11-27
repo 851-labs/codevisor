@@ -18,7 +18,7 @@ struct BotPageInspectorOpener {
       presentTranscript()
     case let .toolCall(sessionId, toolCallId):
       revealToolCall(toolCallId, inChat: sessionId)
-    case .fileRenamed:
+    case .fileRenamed, .terminal:
       break
     }
   }

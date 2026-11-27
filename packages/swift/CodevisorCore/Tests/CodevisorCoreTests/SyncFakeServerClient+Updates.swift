@@ -228,6 +228,10 @@ extension SyncFakeServerClient {
     lock.withLock { _infoCloudDeviceId = deviceId }
   }
 
+  func configureInfoPlatform(_ platform: String) {
+    lock.withLock { _infoPlatform = platform }
+  }
+
   func configureInfoFeatures(_ features: [String]?) {
     lock.withLock { _infoFeatures = features }
   }
@@ -254,7 +258,8 @@ extension SyncFakeServerClient {
     }
     let (cloudDeviceId, features) = lock.withLock { (_infoCloudDeviceId, _infoFeatures) }
     var info = ServerInfo(
-      id: id, name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
+      id: id, name: "Local", kind: "local", version: version, platform: lock.withLock { _infoPlatform },
+      bindHost: "127.0.0.1")
     info.cloudDeviceId = cloudDeviceId
     info.features = features
     info.maxUploadBytes = lock.withLock { _infoMaxUploadBytes }

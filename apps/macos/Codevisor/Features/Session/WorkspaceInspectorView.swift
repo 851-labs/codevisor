@@ -9,6 +9,7 @@ struct WorkspaceInspectorView: View {
     case pullRequest(URL), link(URL), file(String), previewFile(String), botTranscript
     case toolCall(sessionId: UUID, toolCallId: String)
     case fileRenamed(from: String, to: String)
+    case terminal(command: String)
   }
 
   let workspace: Workspace
@@ -37,6 +38,7 @@ struct WorkspaceInspectorView: View {
   let client: any CodevisorServerClienting
   let desktop: CodevisorMachine?
   let onOpenDesktop: () -> Void
+  var opensTerminals = true
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
@@ -221,7 +223,8 @@ struct WorkspaceInspectorView: View {
       WorkspaceInspectorMachineView(
         serverId: workspace.serverId, isActive: isShown && self.tab == .machine, client: client, desktop: desktop,
         desktopExpansion: expansion("Desktop"),
-        statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
+        statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop,
+        onOpenTerminal: opensTerminals ? { onOpen(.terminal(command: $0)) } : nil)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
     case .links:
       WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)

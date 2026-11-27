@@ -23,7 +23,19 @@ extension SessionContainerView {
       revealToolCall(toolCallId, inChat: sessionId)
     case let .fileRenamed(source, destination):
       followFileRename(from: source, to: destination)
+    case let .terminal(command):
+      openTerminal(typing: command)
     }
+  }
+
+  func openTerminal(typing command: String) {
+    guard !isTabless, let session else { return }
+
+    let id = UUID()
+    TerminalFirstCommands.shared.set(command, forPane: id)
+    openCenterTab(
+      with: PaneDescriptorState(
+        id: id, kind: .terminal, name: "Terminal", terminalKey: "\(session.id.uuidString):\(id.uuidString)"))
   }
 
   private func revealToolCall(_ toolCallId: String, inChat sessionId: UUID) {

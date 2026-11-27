@@ -236,6 +236,11 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func backgroundTaskOutput(sessionId: UUID, taskId: String) async throws -> ServerBackgroundTaskOutput
   func stopBackgroundTask(sessionId: UUID, taskId: String) async throws
   func machineStats() async throws -> ServerMachineStats
+  func desktopStatus() async throws -> ServerDesktopStatus
+  func installDesktopPackages() async throws -> ServerDesktopStatus
+  func replaceOldDesktop() async throws -> ServerDesktopStatus
+  func startDesktop(replacingUnmanaged: Bool) async throws -> ServerDesktopStatus
+  func removeDesktop(unsharingUnmanaged: Bool) async throws -> ServerDesktopStatus
   func openSession(
     _ session: ChatSession,
     project: Project?,
