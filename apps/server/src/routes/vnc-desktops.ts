@@ -8,11 +8,13 @@ import {
 } from "./screen-sharing-vnc-scale.js"
 import {
   type DesktopSetup,
+  OUTDATED_DESKTOP,
   outdatedDesktop,
   readDesktopSetup,
   readScreenSetup,
   SCREEN_SHARING_CONFIG_FILE,
   type SharedDisplay,
+  VNC_DISPLAY_ID,
   vncScreenSharing,
   whyNotReachable,
   x11Environment
@@ -51,7 +53,7 @@ export const fileVNCDesktops = (dataDir: string, options: VNCDesktopsOptions = {
 
     return {
       displays: shared.map((display) => display.config),
-      respond: vncScreenSharing(shared, locate)
+      respond: vncScreenSharing(shared, locate, setup.kind === "outdated" ? [outdatedEntry] : [])
     }
   }
   return {
@@ -62,6 +64,7 @@ export const fileVNCDesktops = (dataDir: string, options: VNCDesktopsOptions = {
 }
 
 const desktopWithdrawn = "The desktop on this machine was removed."
+const outdatedEntry = { id: VNC_DISPLAY_ID, name: "Desktop", problem: OUTDATED_DESKTOP }
 const screenWithdrawn = "This machine's screen is no longer shared."
 
 const whyNotShared = (relay: VNCRelay, desktop: VNCDesktop | undefined): string | undefined => {

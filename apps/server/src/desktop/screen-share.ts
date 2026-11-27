@@ -52,7 +52,7 @@ export interface ScreenShare {
   readonly setUp: () => Promise<ScreenStatus>
   readonly remove: () => Promise<ScreenStatus>
   readonly follow: () => Promise<void>
-  readonly viewerJoined: () => void
+  readonly viewerJoined: () => Promise<void>
 }
 
 export interface ScreenShareOptions {
@@ -130,10 +130,12 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return display === undefined ? undefined : `:${display}`
   }
 
-  const sessionByItsProcesses = (): GraphicalSession | undefined => {
+  const sessionByItsProcesses = (own?: AtTheScreen): GraphicalSession | undefined => {
     const found = ownGraphicalSession(system, {
       ignoreDisplay: virtualDisplay(),
-      lookFirstAt: seenAt
+      lookFirstAt: seenAt,
+      session: own?.session,
+      display: own?.display
     })
     seenAt = found?.process
     return found
@@ -148,8 +150,9 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
   const sessionGiven = (present: Present): GraphicalSession | undefined => {
     if (!isAtTheScreen(present)) return undefined
 
-    const found = sessionByItsProcesses()
-    return found === undefined ? undefined : asLogindSaysItIs(found, ownEntry(present)?.type)
+    const own = ownEntry(present)
+    const found = sessionByItsProcesses(own)
+    return found === undefined ? undefined : asLogindSaysItIs(found, own?.type)
   }
 
   const othersGiven = (present: Present): ReadonlyArray<string> =>
@@ -289,7 +292,7 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     const seen = await about(present, found, asked)
     const socket = recordedSocket()
     if (socket === undefined) return { state: "none", ...seen }
-    if (isSharing(socket)) return { state: "running", ...seen }
+    if (found !== undefined && isSharing(socket)) return { state: "running", ...seen }
     if (found === undefined) return { state: "waiting", ...seen }
 
     return { state: "stopped", ...seen, problem: problem ?? notRunning }
@@ -384,15 +387,19 @@ export const makeScreenShare = (options: ScreenShareOptions): ScreenShare => {
     return status()
   }
 
-  const viewerJoined = (): void => {
-    const found = sessionByItsProcesses()
+  const viewerJoined = async (): Promise<void> => {
     const isTooSoon = notifiedAt !== undefined && now() - notifiedAt < notifyEveryMs
-    if (found === undefined || isTooSoon) return
+    if (isTooSoon) return
 
     notifiedAt = now()
-    void system
-      .run("env", [...asAssignments(found.env), "notify-send", "-a", "Codevisor", ...notice])
-      .catch(() => undefined)
+    const found = sessionGiven(await accountsAtTheScreen(system).catch(() => []))
+    if (found === undefined) {
+      notifiedAt = undefined
+      return
+    }
+
+    const shown = [...asAssignments(found.env), "notify-send", "-a", "Codevisor", ...notice]
+    await system.run("env", shown).catch(() => undefined)
   }
 
   return {

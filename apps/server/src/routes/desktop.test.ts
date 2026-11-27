@@ -51,7 +51,7 @@ const recordingScreen = () => {
     setUp: answer("setUp", "waiting"),
     remove: answer("remove", "none"),
     follow: async () => undefined,
-    viewerJoined: () => undefined
+    viewerJoined: async () => undefined
   }
   return { screen, calls, askedSudo }
 }
@@ -93,6 +93,23 @@ describe("the desktop routes", () => {
       "setUp",
       "remove"
     ])
+  })
+
+  it("answer without the screen when looking at it fails", async () => {
+    const { manager } = recordingManager()
+    const { screen } = recordingScreen()
+    const broken: ScreenShare = {
+      ...screen,
+      status: async () => {
+        throw new Error("loginctl: Failed to connect to bus")
+      }
+    }
+    const { call } = await start(manager, broken)
+
+    const answered = await call("GET")
+
+    expect(answered).toMatchObject({ status: 200, body: { state: "none" } })
+    expect(answered.body).not.toHaveProperty("screen")
   })
 
   it("say so when this server can't share a screen", async () => {

@@ -15,7 +15,8 @@ import {
   nextMessage,
   privateDirectory,
   sharesAScreen,
-  statusOf
+  statusOf,
+  streamsAgentViews
 } from "./vnc-test-support.js"
 
 const identity = {
@@ -35,14 +36,22 @@ const resize = Buffer.concat([Buffer.from([251, 0, 4, 0, 3, 0, 1, 0]), Buffer.al
 
 interface Sockets {
   readonly desktop?: string
+  readonly outdatedDesktop?: true
   readonly screen?: string
+}
+
+const desktopEntry = (sockets: Sockets) => {
+  if (sockets.outdatedDesktop === true)
+    return [{ id: "desktop", vnc: { port: 5901, name: "Desktop" }, service: "process" }]
+
+  return sockets.desktop === undefined
+    ? []
+    : [{ id: "desktop", vnc: { socket: sockets.desktop, name: "Desktop" }, service: "process" }]
 }
 
 const share = (dataDir: string, sockets: Sockets): void => {
   const displays = [
-    ...(sockets.desktop === undefined
-      ? []
-      : [{ id: "desktop", vnc: { socket: sockets.desktop, name: "Desktop" }, service: "process" }]),
+    ...desktopEntry(sockets),
     ...(sockets.screen === undefined
       ? []
       : [{ id: "screen", vnc: { socket: sockets.screen, name: "Screen" }, service: "server" }])
@@ -126,11 +135,73 @@ describe("a Linux machine with a desktop and a real screen", () => {
     })
   })
 
-  it("says nobody is logged in when the screen is all it shares", async () => {
+  it("says nobody is logged in when the screen is all it shares, and lets no agent drive it", async () => {
     const machine = await machineWith({ screen: join(privateDirectory(), "codevisor-screen.sock") })
 
     expect(await machine.capabilities()).toMatchObject({ status: "failed", message: notShown })
     expect(await machine.info()).toMatchObject(sharesAScreen)
+    expect(await machine.info()).not.toMatchObject(streamsAgentViews)
+  })
+
+  it("lets agents drive the desktop when a screen is shared too", async () => {
+    const [desktop, screen] = [await fakeVNC(), await fakeVNC()]
+    const machine = await machineWith({ desktop: desktop.socket, screen: screen.socket })
+
+    expect(await machine.info()).toMatchObject(streamsAgentViews)
+  })
+
+  it("keeps the screen viewable and names why the desktop isn't, on its own", async () => {
+    const screen = await fakeVNC()
+    const machine = await machineWith({
+      desktop: join(privateDirectory(), "codevisor-desktop.sock"),
+      screen: screen.socket
+    })
+
+    expect(await machine.capabilities()).toMatchObject({
+      status: "available",
+      displays: [{ id: "vnc:screen" }],
+      unavailable: [
+        {
+          id: "vnc:desktop",
+          name: "Desktop",
+          problem: "The desktop on this machine isn't running."
+        }
+      ]
+    })
+  })
+
+  it("fails with the desktop's own reason when neither can be viewed", async () => {
+    const machine = await machineWith({
+      desktop: join(privateDirectory(), "codevisor-desktop.sock"),
+      screen: join(privateDirectory(), "codevisor-screen.sock")
+    })
+
+    expect(await machine.capabilities()).toEqual({
+      version: 1,
+      status: "failed",
+      provider: "vnc",
+      message: "The desktop on this machine isn't running.",
+      displays: []
+    })
+  })
+
+  it("still tells viewers a desktop was set up for an older Codevisor when a screen is shared", async () => {
+    const screen = await fakeVNC()
+    const shared = await machineWith({ outdatedDesktop: true, screen: screen.socket })
+    const unviewable = await machineWith({
+      outdatedDesktop: true,
+      screen: join(privateDirectory(), "codevisor-screen.sock")
+    })
+
+    expect(await shared.capabilities()).toMatchObject({
+      status: "available",
+      displays: [{ id: "vnc:screen" }],
+      unavailable: [{ id: "vnc:desktop", problem: expect.stringContaining("older version") }]
+    })
+    expect(await unviewable.capabilities()).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("older version")
+    })
   })
 
   it("relays each display to its own server, and reports a viewer of either", async () => {

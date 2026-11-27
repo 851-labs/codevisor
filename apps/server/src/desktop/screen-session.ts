@@ -1,4 +1,7 @@
 import type { DesktopSystem } from "./desktop-system.js"
+import { isInSession, processIds } from "./screen-logind.js"
+
+export { type AtTheScreen, accountsAtTheScreen } from "./screen-logind.js"
 
 export type SessionKind = "x11" | "wlroots" | "wayland"
 
@@ -14,33 +17,20 @@ export type SessionSystem = Pick<DesktopSystem, "uid" | "readText" | "listFolder
 export interface SessionSearch {
   readonly ignoreDisplay?: string | undefined
   readonly lookFirstAt?: number | undefined
+  readonly session?: string | undefined
+  readonly display?: string | undefined
 }
 
 export const ownGraphicalSession = (
   system: SessionSystem,
   search: SessionSearch = {}
 ): GraphicalSession | undefined => {
-  const known = search.lookFirstAt === undefined ? undefined : sessionOf(system, search.lookFirstAt)
-  if (known !== undefined && isWanted(known, search)) return known
+  const known =
+    search.lookFirstAt === undefined ? undefined : candidate(system, search.lookFirstAt, search)
+  if (known !== undefined) return known
 
-  const found = processIds(system)
-    .map((pid) => sessionOf(system, pid))
-    .filter((session) => session !== undefined && isWanted(session, search))
-  return found.find((session) => session?.env["DBUS_SESSION_BUS_ADDRESS"] !== undefined) ?? found[0]
-}
-
-export interface AtTheScreen {
-  readonly account: string
-  readonly type?: string
-}
-
-export const accountsAtTheScreen = async (
-  system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
-  const seated = await seatedAccounts(system)
-  if (seated !== undefined) return seated
-
-  return loggedInOnADisplay(system)
+  const found = processIds(system).flatMap((pid) => candidate(system, pid, search) ?? [])
+  return newestOf(system, withTheBus(found))
 }
 
 const carried = [
@@ -54,27 +44,68 @@ const carried = [
 ]
 const wlrootsMarks = ["SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE"]
 const codevisorsMark = "CODEVISOR_DESKTOP_DISPLAY"
-const greeters = new Set(["lightdm", "gdm", "sddm", "Debian-gdm", "greeter"])
+const x11Sockets = "/tmp/.X11-unix"
+const startTimeField = 19
 
-const processIds = (system: SessionSystem): ReadonlyArray<number> =>
-  system
-    .listFolder("/proc")
-    .filter((name) => /^\d+$/.test(name))
-    .map(Number)
-
-const sessionOf = (system: SessionSystem, pid: number): GraphicalSession | undefined => {
+const candidate = (
+  system: SessionSystem,
+  pid: number,
+  search: SessionSearch
+): GraphicalSession | undefined => {
   if (ownerOf(system, pid) !== system.uid) return undefined
 
   const env = environmentOf(system.readText(`/proc/${pid}/environ`))
   const kind = kindOf(env)
-  if (kind === undefined || isNotAtASeat(env)) return undefined
+  if (kind === undefined || env[codevisorsMark] !== undefined) return undefined
+  if (env["DISPLAY"] !== undefined && env["DISPLAY"] === search.ignoreDisplay) return undefined
+  if (!belongs(system, pid, env, search)) return undefined
 
+  const display = search.display ?? env["DISPLAY"]
+  const kept = Object.fromEntries(carried.flatMap((name) => keptValue(env, name)))
   return {
     kind,
     process: pid,
-    ...(env["DISPLAY"] === undefined ? {} : { display: env["DISPLAY"] }),
-    env: Object.fromEntries(carried.flatMap((name) => keptValue(env, name)))
+    ...(display === undefined ? {} : { display }),
+    env: display === undefined ? kept : { ...kept, DISPLAY: display }
   }
+}
+
+const belongs = (
+  system: SessionSystem,
+  pid: number,
+  env: Readonly<Record<string, string>>,
+  search: SessionSearch
+): boolean => {
+  if (search.session !== undefined)
+    return isInSession(system, pid, search.session) && showsTheDisplay(env, search.display)
+  if ((env["XDG_SEAT"] ?? "") === "") return false
+
+  return env["WAYLAND_DISPLAY"] !== undefined || isLive(system, env["DISPLAY"])
+}
+
+const showsTheDisplay = (env: Readonly<Record<string, string>>, display?: string): boolean =>
+  display === undefined || env["DISPLAY"] === undefined || env["DISPLAY"] === display
+
+const isLive = (system: SessionSystem, display: string | undefined): boolean => {
+  const number = /^:(\d+)(\.\d+)?$/.exec(display ?? "")?.[1]
+  return number !== undefined && system.listFolder(x11Sockets).includes(`X${number}`)
+}
+
+const withTheBus = (found: ReadonlyArray<GraphicalSession>): ReadonlyArray<GraphicalSession> => {
+  const onTheBus = found.filter((session) => session.env["DBUS_SESSION_BUS_ADDRESS"] !== undefined)
+  return onTheBus.length > 0 ? onTheBus : found
+}
+
+const newestOf = (
+  system: SessionSystem,
+  found: ReadonlyArray<GraphicalSession>
+): GraphicalSession | undefined =>
+  found.toSorted((one, other) => startOf(system, other.process) - startOf(system, one.process))[0]
+
+const startOf = (system: SessionSystem, pid: number): number => {
+  const stat = system.readText(`/proc/${pid}/stat`) ?? ""
+  const afterName = stat.slice(stat.lastIndexOf(")") + 2).split(" ")
+  return Number(afterName[startTimeField]) || 0
 }
 
 const keptValue = (
@@ -84,12 +115,6 @@ const keptValue = (
   const value = env[name]
   return value === undefined ? [] : [[name, value]]
 }
-
-const isWanted = (session: GraphicalSession, search: SessionSearch): boolean =>
-  session.display === undefined || session.display !== search.ignoreDisplay
-
-const isNotAtASeat = (env: Readonly<Record<string, string>>): boolean =>
-  (env["XDG_SEAT"] ?? "") === "" || env[codevisorsMark] !== undefined
 
 const kindOf = (env: Readonly<Record<string, string>>): SessionKind | undefined => {
   if (env["WAYLAND_DISPLAY"] !== undefined)
@@ -110,78 +135,3 @@ const environmentOf = (text: string | undefined): Readonly<Record<string, string
       .map((pair) => [pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1)] as const)
       .filter(([name]) => name !== "")
   )
-
-const seatedAccounts = async (
-  system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
-  const listed = await system.run("loginctl", ["list-sessions", "--no-legend"])
-  if (listed.code !== 0) return undefined
-
-  const ids = listed.output
-    .split("\n")
-    .map((line) => line.trim().split(/\s+/)[0] ?? "")
-    .filter((id) => id !== "")
-  const accounts = await Promise.all(ids.map((id) => seatedAccountOf(system, id)))
-  return uniqueAccounts(accounts.filter((account) => account !== undefined))
-}
-
-const seatedAccountOf = async (
-  system: Pick<DesktopSystem, "run">,
-  session: string
-): Promise<AtTheScreen | undefined> => {
-  const shown = await system.run("loginctl", [
-    "show-session",
-    session,
-    "-p",
-    "Name",
-    "-p",
-    "Seat",
-    "-p",
-    "Class",
-    "-p",
-    "Remote",
-    "-p",
-    "State",
-    "-p",
-    "Type"
-  ])
-  const fields = new Map(
-    shown.output.split("\n").map((line) => {
-      const [name = "", ...value] = line.trim().split("=")
-      return [name, value.join("=")] as const
-    })
-  )
-  const isAtTheScreen =
-    shown.code === 0 &&
-    (fields.get("Seat") ?? "") !== "" &&
-    fields.get("Class") === "user" &&
-    fields.get("Remote") !== "yes" &&
-    fields.get("State") !== "closing"
-  const account = fields.get("Name") ?? ""
-  if (!isAtTheScreen || account === "") return undefined
-
-  const type = fields.get("Type") ?? ""
-  return type === "" ? { account } : { account, type }
-}
-
-const loggedInOnADisplay = async (
-  system: Pick<DesktopSystem, "run">
-): Promise<ReadonlyArray<AtTheScreen> | undefined> => {
-  const listed = await system.run("who", [])
-  if (listed.code !== 0) return undefined
-
-  const accounts = unique(
-    listed.output
-      .split("\n")
-      .map((line) => line.trim().split(/\s+/))
-      .filter((fields) => fields.some((field) => /^\(?:\d/.test(field)))
-      .map((fields) => fields[0] ?? "")
-      .filter((account) => account !== "" && !greeters.has(account))
-  )
-  return accounts.map((account) => ({ account }))
-}
-
-const unique = (names: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(names)]
-
-const uniqueAccounts = (found: ReadonlyArray<AtTheScreen>): ReadonlyArray<AtTheScreen> =>
-  found.filter((entry, at) => found.findIndex((other) => other.account === entry.account) === at)

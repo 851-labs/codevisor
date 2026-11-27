@@ -3,7 +3,11 @@ import type { IncomingMessage } from "node:http"
 import { connect, type Socket } from "node:net"
 import { isAbsolute, join } from "node:path"
 
-import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
+import type {
+  ScreenSharingReply,
+  ScreenSharingRequest,
+  ScreenSharingUnavailableDisplay
+} from "@codevisor/api"
 import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
@@ -74,11 +78,11 @@ export const recordedDesktopService = (text: string): string | undefined => {
   return typeof service === "string" ? service : undefined
 }
 
+export const OUTDATED_DESKTOP =
+  "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it."
+
 export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>
-  vncReply(
-    "failed",
-    "This machine's desktop was set up for an older version of Codevisor. Set it up again to share it."
-  )
+  vncReply("failed", OUTDATED_DESKTOP)
 
 export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | undefined => {
   const vnc = vncSection(text)
@@ -146,35 +150,51 @@ export const whyNotReachable = (
 export const vncScreenSharing =
   (
     shared: ReadonlyArray<SharedDisplay>,
-    locate: (configured: string) => PrivateSocket = privateSocket
+    locate: (configured: string) => PrivateSocket = privateSocket,
+    known: ReadonlyArray<ScreenSharingUnavailableDisplay> = []
   ) =>
   async (request: ScreenSharingRequest): Promise<ScreenSharingReply> => {
-    if (request.operation === "capabilities") return capabilities(shared, locate)
+    if (request.operation === "capabilities") return capabilities(shared, locate, known)
     if (request.operation === "setScale") return setScale(request, shared)
     return vncReply("unsupported", "This machine streams its display over the VNC socket")
   }
 
+interface Looked {
+  readonly display: SharedDisplay
+  readonly problem: PrivateSocketProblem | undefined
+}
+
 const capabilities = (
   shared: ReadonlyArray<SharedDisplay>,
-  locate: (configured: string) => PrivateSocket
+  locate: (configured: string) => PrivateSocket,
+  known: ReadonlyArray<ScreenSharingUnavailableDisplay>
 ): ScreenSharingReply => {
-  const found = shared.map((display) => ({
+  const looked = shared.map((display) => ({
     display,
     problem: locate(display.config.socket).problem
   }))
-  const reachable = found.filter((one) => one.problem === undefined)
-  const first = found[0]
-  if (reachable.length === 0 && first?.problem !== undefined)
-    return vncReply("failed", whyNotReachable(first.display.config, first.problem))
+  const reachable = looked.filter((one) => one.problem === undefined)
+  const unavailable = [...known, ...looked.flatMap(unavailableDisplay)]
+  const first = unavailable[0]
+  if (reachable.length === 0 && first !== undefined) return vncReply("failed", first.problem)
 
   return {
     version: 1,
     status: "available",
     provider: "vnc",
     controlLease: true,
-    displays: reachable.map((one) => listed(one.display))
+    displays: reachable.map((one) => listed(one.display)),
+    ...(unavailable.length === 0 ? {} : { unavailable })
   }
 }
+
+const unavailableDisplay = ({
+  display: { config },
+  problem
+}: Looked): ReadonlyArray<ScreenSharingUnavailableDisplay> =>
+  problem === undefined
+    ? []
+    : [{ id: displayIdOf(config), name: config.name, problem: whyNotReachable(config, problem) }]
 
 const listed = ({ config, scaler }: SharedDisplay) => ({
   id: displayIdOf(config),

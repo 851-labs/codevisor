@@ -73,7 +73,11 @@ const withTheScreen = async (
 ): Promise<DesktopStatus> => {
   if (screen === undefined) return status
 
-  return { ...status, screen: await screen.status({ askSudo }) }
+  try {
+    return { ...status, screen: await screen.status({ askSudo }) }
+  } catch {
+    return status
+  }
 }
 
 const announceFeatures = ({ services, fanout }: RouteContext): void => {

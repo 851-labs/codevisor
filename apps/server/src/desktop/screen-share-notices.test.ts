@@ -12,21 +12,20 @@ describe("telling the person at the screen that someone is viewing it", () => {
     machine.logIn()
     const shown = () => machine.commands.filter((line) => line === notification)
 
-    machine.screen.viewerJoined()
-    machine.screen.viewerJoined()
+    await Promise.all([machine.screen.viewerJoined(), machine.screen.viewerJoined()])
     expect(shown()).toHaveLength(1)
 
     machine.clock.now += 30_000
-    machine.screen.viewerJoined()
+    await machine.screen.viewerJoined()
     expect(shown()).toHaveLength(2)
   })
 
-  it("shows nothing when nobody is logged in", () => {
+  it("shows nothing when nobody is logged in", async () => {
     const machine = workstation({ files: { [CONFIG]: setUp } })
 
-    machine.screen.viewerJoined()
+    await machine.screen.viewerJoined()
 
-    expect(machine.commands).toEqual([])
+    expect(machine.commands.filter((line) => line.includes("notify-send"))).toEqual([])
   })
 })
 

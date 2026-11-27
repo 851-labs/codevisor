@@ -231,6 +231,7 @@ describe("sharing the screen the server's account is logged in at", () => {
     await machine.screen.setUp()
 
     machine.leaveTheScreen()
+    expect(await machine.screen.status()).toMatchObject({ state: "waiting" })
     await machine.screen.follow()
 
     expect(machine.terminated).toEqual([helper])

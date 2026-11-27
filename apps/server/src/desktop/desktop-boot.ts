@@ -33,7 +33,7 @@ export const linuxDesktops = (options: LinuxDesktopsOptions): LinuxDesktops => {
   const screen = makeScreenShare({ system, dataDir, logsDir, changed })
   const desktops = fileVNCDesktops(dataDir, {
     viewerJoined: (display) => {
-      if (display.screen === true) screen.viewerJoined()
+      if (display.screen === true) void screen.viewerJoined()
     }
   })
   relayed.desktops = desktops

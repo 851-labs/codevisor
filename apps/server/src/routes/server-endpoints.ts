@@ -132,7 +132,7 @@ const screenFeatures = (config: CodevisorServerConfig): ReadonlyArray<string> =>
 
   const desktop = config.desktops?.current()
   if (desktop === undefined) return []
-  if (desktop.displays.length === 0) return ["screen-sharing-v1"]
+  if (!desktop.displays.some((display) => display.screen !== true)) return ["screen-sharing-v1"]
 
   return ["screen-sharing-v1", "computer-use-stream-v1"]
 }
