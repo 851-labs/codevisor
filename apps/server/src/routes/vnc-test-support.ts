@@ -110,7 +110,10 @@ export const startWithDesktop = async (
   const dataDir = privateDirectory()
   if (vnc !== undefined) writeDesktopConfig(dataDir, vnc)
   const { services } = await makeServices()
-  const desktops = fileVNCDesktops(dataDir, commands, log)
+  const desktops = fileVNCDesktops(dataDir, {
+    ...(commands === undefined ? {} : { commands }),
+    ...(log === undefined ? {} : { log })
+  })
   const server = await startWithApp(services, undefined, {
     desktops,
     ...(auth === undefined ? {} : { auth })

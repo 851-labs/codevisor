@@ -67,6 +67,11 @@ const ok: Ran = { code: 0, output: "" }
 const failed: Ran = { code: 1, output: "" }
 const programProbe = /^sh -c command -v "\$1" sh (.+)$/
 
+export const recordedDesktop = (machine: Pick<FakeMachine, "files">) =>
+  JSON.parse(machine.files.get(CONFIG) ?? "").displays.find(
+    (entry: { id: string }) => entry.id === "desktop"
+  )
+
 export const settled = async (manager: DesktopManager) => {
   let status = await manager.status()
   while (status.busy !== undefined) status = await manager.status()

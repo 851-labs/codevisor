@@ -6,10 +6,13 @@ import {
   DESKTOP_PROGRAMS,
   type OsRelease,
   type PackageManager,
-  packageFamilies
+  packageFamilies,
+  SCREEN_NOTIFIER,
+  SCREEN_PROGRAMS,
+  SCREEN_SCRAPERS
 } from "./package-managers.js"
 
-export { DESKTOP_PROGRAMS, type OsRelease } from "./package-managers.js"
+export { DESKTOP_PROGRAMS, type OsRelease, SCREEN_PROGRAMS } from "./package-managers.js"
 
 const plainWord = /^[A-Za-z0-9_@%+=:,./-]+$/
 
@@ -26,6 +29,7 @@ export interface InstallPlan {
   readonly manager: PackageManager
   readonly megabytes: number
   readonly commands: ReadonlyArray<RootCommand>
+  readonly screenCommands: ReadonlyArray<RootCommand>
 }
 
 export const osRelease = (system: DesktopSystem): OsRelease => {
@@ -45,6 +49,22 @@ export const osRelease = (system: DesktopSystem): OsRelease => {
 export const missingPrograms = async (system: DesktopSystem): Promise<ReadonlyArray<string>> => {
   const found = await Promise.all(DESKTOP_PROGRAMS.map((program) => hasProgram(system, program)))
   return DESKTOP_PROGRAMS.filter((_, index) => !found[index])
+}
+
+export const screenScraper = async (system: DesktopSystem): Promise<string | undefined> => {
+  for (const program of SCREEN_SCRAPERS) if (await hasProgram(system, program)) return program
+
+  return undefined
+}
+
+export const missingScreenPrograms = async (
+  system: DesktopSystem
+): Promise<ReadonlyArray<string>> => {
+  const hasScraper = (await screenScraper(system)) !== undefined
+  const hasNotifier = await hasProgram(system, SCREEN_NOTIFIER)
+  return SCREEN_PROGRAMS.filter((program) =>
+    program === SCREEN_NOTIFIER ? !hasNotifier : !hasScraper
+  )
 }
 
 export const hasProgram = async (system: DesktopSystem, program: string): Promise<boolean> =>
@@ -72,7 +92,12 @@ export const installPlan = async (
   if (family === undefined || systemFilesAreReadOnly(system)) return undefined
   if (!(await hasProgram(system, family.program))) return undefined
 
-  return { manager: family.manager, megabytes: family.megabytes, commands: family.commands }
+  return {
+    manager: family.manager,
+    megabytes: family.megabytes,
+    commands: family.commands,
+    screenCommands: family.screenCommands
+  }
 }
 
 export const shellText = (command: RootCommand): string => command.map(shellWord).join(" ")

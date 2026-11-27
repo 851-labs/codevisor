@@ -210,7 +210,9 @@ describe("viewers without an app identity", () => {
     const native = vi.fn(async () => reply)
     const respond = vi.fn(async () => ({ ...reply, provider: "vnc" }))
     const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
-    const { post } = await fixture(native, { desktops: { current: () => ({ config, respond }) } })
+    const { post } = await fixture(native, {
+      desktops: { current: () => ({ displays: [config], respond }) }
+    })
     const answered = await post(capabilities())
     expect(answered.status).toBe(200)
     expect(answered.body).toEqual({ ...reply, provider: "vnc" })

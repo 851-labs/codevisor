@@ -23,6 +23,9 @@ export const endpoints = [
   "POST /v1/desktop/replace-old",
   "POST /v1/desktop/start",
   "DELETE /v1/desktop",
+  "POST /v1/desktop/screen",
+  "POST /v1/desktop/screen/packages",
+  "DELETE /v1/desktop/screen",
   "GET /v1/feature-flags",
   "PUT /v1/feature-flags/:id",
   "GET /v1/sandbox-providers",
@@ -289,6 +292,11 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/desktop/start":
     "Set the desktop up as the server's own account, start it now and at boot, and share it",
   "DELETE /v1/desktop": "Stop the desktop, closing everything open in it, and stop sharing it",
+  "POST /v1/desktop/screen":
+    "Share the screen of the account's own graphical session whenever it is logged in",
+  "POST /v1/desktop/screen/packages":
+    "Install what sharing the screen needs, when the server's account can do that without a password",
+  "DELETE /v1/desktop/screen": "Stop sharing the machine's screen",
   "GET /v1/feature-flags":
     "List experimental features and whether each is on; the Codevisor apps sync them across machines",
   "PUT /v1/feature-flags/:id": "Turn an experimental feature on or off",

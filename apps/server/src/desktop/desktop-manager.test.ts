@@ -222,6 +222,29 @@ describe("removing the desktop", () => {
   })
 })
 
+const displaysOf = (machine: ReturnType<typeof fakeMachine>): unknown =>
+  JSON.parse(machine.files.get(CONFIG) ?? "").displays
+
+describe("a desktop on a machine whose real screen is shared too", () => {
+  const screen = {
+    id: "screen",
+    vnc: { socket: "/run/user/1001/codevisor-screen.sock", name: "Screen" },
+    service: "server"
+  }
+  it("is recorded beside the screen when it is set up, and leaves the screen's entry when it is removed", async () => {
+    const machine = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: JSON.stringify({ displays: [screen] }) }
+    })
+
+    expect(await machine.manager.status()).toMatchObject({ state: "none", unmanaged: false })
+    await machine.manager.start()
+    expect(displaysOf(machine)).toMatchObject([{ id: "desktop", service: "systemd-user" }, screen])
+
+    await machine.manager.remove()
+    expect(displaysOf(machine)).toEqual([screen])
+  })
+})
+
 describe("a server that boots where there is no systemd", () => {
   const withoutSystemd = { files: UBUNTU, failing: ["systemctl --user show-environment"] }
   const pidFile = `${DATA_DIR}/desktop.pid`

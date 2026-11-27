@@ -23,7 +23,10 @@ export const runtimeFolder = (system: DesktopSystem): string => {
   return ownRuntimeFolder(system)
 }
 
-export const keepOwnFoldersPrivate = (system: DesktopSystem, layout: DesktopLayout): void => {
+export const keepOwnFoldersPrivate = (
+  system: DesktopSystem,
+  layout: Pick<DesktopLayout, "socket">
+): void => {
   const folder = dirname(layout.socket)
   if (folder !== ownRuntimeFolder(system)) return
 

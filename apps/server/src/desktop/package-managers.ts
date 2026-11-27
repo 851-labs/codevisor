@@ -11,6 +11,10 @@ export const DESKTOP_PROGRAMS = [
   "python3"
 ] as const
 
+export const SCREEN_SCRAPERS = ["X0tigervnc", "x0vncserver"] as const
+export const SCREEN_NOTIFIER = "notify-send"
+export const SCREEN_PROGRAMS = ["x0vncserver", SCREEN_NOTIFIER] as const
+
 export interface OsRelease {
   readonly name: string
   readonly id: string
@@ -23,6 +27,7 @@ export interface PackageFamily {
   readonly megabytes: number
   readonly serves: (release: OsRelease) => boolean
   readonly commands: ReadonlyArray<RootCommand>
+  readonly screenCommands: ReadonlyArray<RootCommand>
 }
 
 const lockWaitSeconds = 600
@@ -88,6 +93,11 @@ const zypperPackages = [
   "adwaita-icon-theme"
 ]
 
+const aptScreenPackages = ["tigervnc-scraping-server", "libnotify-bin"]
+const dnfScreenPackages = ["tigervnc-x11-server", "libnotify"]
+const pacmanScreenPackages = ["tigervnc", "libnotify"]
+const zypperScreenPackages = ["xorg-x11-Xvnc", "libnotify-tools"]
+
 const aptFamily = new Set(["debian", "ubuntu"])
 const withoutXfceOfTheirOwn = new Set(["rhel", "centos", "ol", "amzn"])
 const aptQuietly = ["env", "DEBIAN_FRONTEND=noninteractive"]
@@ -108,26 +118,38 @@ const zypperSkippedAndFellShort =
   "zypper skipped a repository it could not refresh, so not everything was installed. Check the repositories with: zypper refresh"
 const zypperWithTheStockPanel = `rpm -q xfce4-panel-branding-openSUSE >/dev/null 2>&1 || set -- "$@" xfce4-panel-branding-upstream; env ZYPP_LOCK_TIMEOUT=${lockWaitSeconds} zypper --non-interactive --ignore-unknown install --no-recommends "$@"; code=$?; case $code in ${zypperInstalledBut}) exit 0 ;; ${zypperSkippedARepository}) for program in ${DESKTOP_PROGRAMS.join(" ")}; do command -v "$program" >/dev/null || { echo "${zypperSkippedAndFellShort}"; exit $code; }; done; exit 0 ;; esac; exit $code`
 
+const aptInstall = (packages: ReadonlyArray<string>): ReadonlyArray<RootCommand> => [
+  [...aptQuietly, "sh", "-c", aptUpdateUntilTheListsLockIsFree],
+  [
+    ...aptQuietly,
+    "apt-get",
+    "-o",
+    `DPkg::Lock::Timeout=${lockWaitSeconds}`,
+    "install",
+    "-y",
+    "-q",
+    "--no-install-recommends",
+    ...packages
+  ]
+]
+
+const zypperInstall = [
+  "env",
+  `ZYPP_LOCK_TIMEOUT=${lockWaitSeconds}`,
+  "zypper",
+  "--non-interactive",
+  "install",
+  "--no-recommends"
+]
+
 export const packageFamilies: ReadonlyArray<PackageFamily> = [
   {
     manager: "apt",
     program: "apt-get",
     megabytes: 640,
     serves: (release) => release.ids.some((id) => aptFamily.has(id)),
-    commands: [
-      [...aptQuietly, "sh", "-c", aptUpdateUntilTheListsLockIsFree],
-      [
-        ...aptQuietly,
-        "apt-get",
-        "-o",
-        `DPkg::Lock::Timeout=${lockWaitSeconds}`,
-        "install",
-        "-y",
-        "-q",
-        "--no-install-recommends",
-        ...aptPackages
-      ]
-    ]
+    commands: aptInstall(aptPackages),
+    screenCommands: aptInstall(aptScreenPackages)
   },
   {
     manager: "dnf",
@@ -135,20 +157,23 @@ export const packageFamilies: ReadonlyArray<PackageFamily> = [
     megabytes: 450,
     serves: (release) =>
       release.ids.includes("fedora") && !release.ids.some((id) => withoutXfceOfTheirOwn.has(id)),
-    commands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfPackages]]
+    commands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfPackages]],
+    screenCommands: [["sh", "-c", dnfUntilTheRpmLockIsFree, "sh", ...dnfScreenPackages]]
   },
   {
     manager: "pacman",
     program: "pacman",
     megabytes: 980,
     serves: (release) => release.ids.includes("arch"),
-    commands: [["sh", "-c", pacmanUntilItsLockIsFree, "sh", ...pacmanPackages]]
+    commands: [["sh", "-c", pacmanUntilItsLockIsFree, "sh", ...pacmanPackages]],
+    screenCommands: [["sh", "-c", pacmanUntilItsLockIsFree, "sh", ...pacmanScreenPackages]]
   },
   {
     manager: "zypper",
     program: "zypper",
     megabytes: 740,
     serves: (release) => release.ids.includes("opensuse"),
-    commands: [["sh", "-c", zypperWithTheStockPanel, "sh", ...zypperPackages]]
+    commands: [["sh", "-c", zypperWithTheStockPanel, "sh", ...zypperPackages]],
+    screenCommands: [[...zypperInstall, ...zypperScreenPackages]]
   }
 ]

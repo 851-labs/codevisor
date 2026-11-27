@@ -8,7 +8,8 @@ import {
   type FakeMachineOptions,
   LOGS_DIR,
   UBUNTU,
-  UNIT
+  UNIT,
+  recordedDesktop
 } from "./desktop-test-support.js"
 
 const withoutSystemd = { files: UBUNTU, failing: ["systemctl --user show-environment"] }
@@ -168,13 +169,13 @@ describe("a server that can't see its account's systemd by itself", () => {
     expect(status.logHint).toBe(
       "XDG_RUNTIME_DIR=/run/user/1001 journalctl --user -u codevisor-desktop"
     )
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "systemd-user" })
+    expect(recordedDesktop(machine)).toMatchObject({ service: "systemd-user" })
   })
 
   it("closes its own folders above the socket to other accounts, so an account whose umask leaves them group-writable still gets a desktop", async () => {
     const machine = fakeMachine(asASystemService)
     await machine.manager.start()
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+    expect(recordedDesktop(machine)).toMatchObject({
       vnc: { socket: "/home/codevisor/.codevisor/run/codevisor-desktop.sock" }
     })
     expect(machine.madePrivate).toEqual(["/home/codevisor/.codevisor/run"])
@@ -267,7 +268,7 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
     expect(userSystemctl(machine.commands)).toContain(
       "systemctl --user restart codevisor-desktop.service"
     )
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "systemd-user" })
+    expect(recordedDesktop(machine)).toMatchObject({ service: "systemd-user" })
   })
 
   it("stays down, and says why, when another server on the account owns the desktop unit", async () => {
@@ -284,7 +285,7 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
     expect(machine.files.get(UNIT)).toBe(theirUnit)
     expect(userSystemctl(machine.commands)).toEqual([])
     expect(machine.spawned).toEqual([])
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({ service: "process" })
+    expect(recordedDesktop(machine)).toMatchObject({ service: "process" })
     expect(await machine.manager.status()).toMatchObject({
       state: "stopped",
       problem: expect.stringContaining("Another Codevisor server on this account")
@@ -369,7 +370,7 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
     })
     await machine.manager.resume()
     expect(machine.terminated).toEqual([777])
-    expect(JSON.parse(machine.files.get(CONFIG) ?? "")).toMatchObject({
+    expect(recordedDesktop(machine)).toMatchObject({
       vnc: { display: 1 },
       service: "systemd-user"
     })

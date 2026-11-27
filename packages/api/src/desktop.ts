@@ -11,6 +11,19 @@ export const OldDesktop = Schema.Struct({
 })
 export type OldDesktop = typeof OldDesktop.Type
 
+export const ScreenState = Schema.Literals(["none", "waiting", "running", "stopped"])
+export type ScreenState = typeof ScreenState.Type
+
+export const ScreenStatus = Schema.Struct({
+  state: ScreenState,
+  session: Schema.optional(Schema.String),
+  display: Schema.optional(Schema.String),
+  problem: Schema.optional(Schema.String),
+  missing: Schema.Array(Schema.String),
+  others: Schema.Array(Schema.String)
+})
+export type ScreenStatus = typeof ScreenStatus.Type
+
 export const DesktopStatus = Schema.Struct({
   state: DesktopState,
   account: Schema.String,
@@ -28,6 +41,7 @@ export const DesktopStatus = Schema.Struct({
   oldDesktop: Schema.optional(OldDesktop),
   startsAtBoot: Schema.Boolean,
   startAtBootHint: Schema.optional(Schema.String),
-  logHint: Schema.String
+  logHint: Schema.String,
+  screen: Schema.optional(ScreenStatus)
 })
 export type DesktopStatus = typeof DesktopStatus.Type

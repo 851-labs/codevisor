@@ -340,7 +340,7 @@ describe("a desktop that appears or goes away while the server keeps running", (
 
   it("lists a desktop's features from one look at it, so they can't disagree mid-rewrite", async () => {
     const config = { socket: "/run/user/1000/codevisor-desktop.sock", name: "Desktop" }
-    const looks = [{ config, respond: async () => undefined }, undefined]
+    const looks = [{ displays: [config], respond: async () => undefined }, undefined]
     const { services } = await makeServices()
     const server = await startWithApp(services, undefined, {
       desktops: { current: () => looks.shift() }

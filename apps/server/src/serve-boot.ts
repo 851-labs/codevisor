@@ -3,7 +3,6 @@ import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
-import { setTimeout as wait } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
@@ -18,8 +17,7 @@ import {
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
 
-import { type DesktopManager, makeDesktopManager } from "./desktop/desktop-manager.js"
-import { systemDesktopSystem } from "./desktop/desktop-system.js"
+import { type LinuxDesktops, linuxDesktops } from "./desktop/desktop-boot.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCloudInbox } from "./infra/cloud-inbox.js"
 import { resolveLogsDir } from "./infra/data-dir.js"
@@ -41,7 +39,6 @@ import {
   startCatalogRefresh,
   type PluginCatalog
 } from "./plugins/plugin-catalog.js"
-import { fileVNCDesktops } from "./routes/vnc-desktops.js"
 import type { VNCDesktops } from "./server-context-types.js"
 import { makeSimulators, systemSimulatorEnvironment, type Simulators } from "./simulators.js"
 import type { StartupReporter } from "./startup-progress.js"
@@ -54,55 +51,24 @@ export const nativeScreenSharing = (dataDir: string) =>
     : undefined
 export const screenSharingProvider = (
   dataDir: string
-): {
+): Omit<LinuxDesktops, "desktops"> & {
   readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops: VNCDesktops | undefined
-  readonly desktop: DesktopManager | undefined
-  readonly desktopResumed: Promise<void>
 } => {
   const native = nativeScreenSharing(dataDir)
-  if (native !== undefined) return { screenSharing: native, ...noLinuxDesktop, desktops: undefined }
+  if (native !== undefined) return { screenSharing: native, ...noLinuxDesktops }
 
-  const desktops = fileVNCDesktops(dataDir)
-  return { screenSharing: undefined, desktops, ...linuxDesktop(dataDir, desktops) }
+  const cli = join(dirname(fileURLToPath(import.meta.url)), "cli.js")
+  return { screenSharing: undefined, ...linuxDesktops({ dataDir, logsDir: resolveLogsDir(), cli }) }
 }
 
-interface ResumedDesktop {
-  readonly desktop: DesktopManager | undefined
-  readonly desktopResumed: Promise<void>
+const noLinuxDesktops = {
+  desktops: undefined,
+  desktop: undefined,
+  screen: undefined,
+  desktopResumed: Promise.resolve()
 }
 
-const desktopResumeLimitMs = 15_000
-const unreferenced = { ref: false }
-
-const noLinuxDesktop: ResumedDesktop = { desktop: undefined, desktopResumed: Promise.resolve() }
-
-const linuxDesktop = (dataDir: string, desktops: VNCDesktops): ResumedDesktop => {
-  if (process.platform !== "linux") return noLinuxDesktop
-
-  const manager = makeDesktopManager({
-    system: systemDesktopSystem(),
-    dataDir,
-    logsDir: resolveLogsDir(),
-    runner: {
-      program: process.execPath,
-      args: [
-        join(dirname(fileURLToPath(import.meta.url)), "cli.js"),
-        "desktop",
-        "run",
-        "--data-dir",
-        dataDir
-      ]
-    },
-    changed: () => desktops.relays?.recheck()
-  })
-  const resumed = manager.resume().catch(() => undefined)
-  const desktopResumed = Promise.race([
-    resumed,
-    wait(desktopResumeLimitMs, undefined, unreferenced)
-  ])
-  return { desktop: manager, desktopResumed }
-}
 export const canReadFolder = async (path: string): Promise<boolean> => {
   try {
     await readdir(path)

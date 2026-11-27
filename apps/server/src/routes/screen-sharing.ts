@@ -15,7 +15,7 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import { VNC_DISPLAY_ID } from "./screen-sharing-vnc.js"
+import { VNC_DISPLAY_ID, VNC_SCREEN_ID } from "./screen-sharing-vnc.js"
 
 const maxRequestBytes = 300 * 1024
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -26,8 +26,10 @@ const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const isKnownTarget = (displayId: string): boolean =>
   uuid.test(displayId) || computerUseTarget.test(displayId) || simulatorTarget.test(displayId)
 
+const vncDisplays = new Set([VNC_DISPLAY_ID, VNC_SCREEN_ID])
+
 const namesADisplay = (displayId: string, desktop: VNCDesktop | undefined): boolean =>
-  isKnownTarget(displayId) || (desktop !== undefined && displayId === VNC_DISPLAY_ID)
+  isKnownTarget(displayId) || (desktop !== undefined && vncDisplays.has(displayId))
 
 const endpointId = /^[0-9a-f]{64}$/i
 const maxMediaAddrs = 32

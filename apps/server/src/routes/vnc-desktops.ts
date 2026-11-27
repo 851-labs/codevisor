@@ -10,43 +10,65 @@ import {
   type DesktopSetup,
   outdatedDesktop,
   readDesktopSetup,
+  readScreenSetup,
   SCREEN_SHARING_CONFIG_FILE,
-  socketProblemMessages,
+  type SharedDisplay,
   vncScreenSharing,
+  whyNotReachable,
   x11Environment
 } from "./screen-sharing-vnc.js"
 import { type VNCRelay, VNCRelays } from "./vnc-relays.js"
 
-export const fileVNCDesktops = (
-  dataDir: string,
-  commands: ScalerCommands = systemScalerCommands,
-  log: (line: string) => void = (line) => console.error(line)
-): VNCDesktops => {
+export interface VNCDesktopsOptions {
+  readonly commands?: ScalerCommands
+  readonly log?: (line: string) => void
+  readonly viewerJoined?: (display: ScreenSharingVNCConfig) => void
+}
+
+export const fileVNCDesktops = (dataDir: string, options: VNCDesktopsOptions = {}): VNCDesktops => {
+  const commands = options.commands ?? systemScalerCommands
+  const log = options.log ?? ((line: string) => console.error(line))
   const noteSetup = whenItChanges(log)
   const noteSocket = whenItChanges(log)
   const locate = (configured: string): PrivateSocket => {
     const socket = privateSocket(configured)
-    noteSocket(socket.problem === undefined ? undefined : `not shared: ${socket.detail}`)
+    if (configured !== readScreenSetup(dataDir)?.socket)
+      noteSocket(socket.problem === undefined ? undefined : `not shared: ${socket.detail}`)
     return socket
   }
   const current = (): VNCDesktop | undefined => {
     const setup = readDesktopSetup(dataDir)
+    const screen = readScreenSetup(dataDir)
     noteSetup(setupNotices[setup.kind])
-    if (setup.kind === "ready") return desktopFor(setup.config, commands, locate)
-    if (setup.kind === "outdated") return { respond: outdatedDesktop }
+    if (setup.kind === "outdated" && screen === undefined)
+      return { displays: [], respond: outdatedDesktop }
 
-    return undefined
+    const shared = [
+      ...(setup.kind === "ready" ? [virtualDesktop(setup.config, commands)] : []),
+      ...(screen === undefined ? [] : [{ config: screen }])
+    ]
+    if (shared.length === 0) return undefined
+
+    return {
+      displays: shared.map((display) => display.config),
+      respond: vncScreenSharing(shared, locate)
+    }
   }
-  return { current, relays: new VNCRelays((relay) => whyNotShared(relay, current())) }
+  return {
+    current,
+    relays: new VNCRelays((relay) => whyNotShared(relay, current())),
+    ...(options.viewerJoined === undefined ? {} : { viewerJoined: options.viewerJoined })
+  }
 }
 
 const withdrawn = "The desktop on this machine was removed."
 
 const whyNotShared = (relay: VNCRelay, desktop: VNCDesktop | undefined): string | undefined => {
-  if (desktop?.config?.socket !== relay.configured) return withdrawn
+  const display = desktop?.displays.find((shared) => shared.socket === relay.configured)
+  if (display === undefined) return withdrawn
 
   const socket = privateSocket(relay.configured)
-  if (socket.problem !== undefined) return socketProblemMessages[socket.problem]
+  if (socket.problem !== undefined) return whyNotReachable(display, socket.problem)
   if (socket.path !== relay.dialled) return withdrawn
 
   return undefined
@@ -69,13 +91,12 @@ const whenItChanges = (log: (line: string) => void): ((notice: string | undefine
   }
 }
 
-const desktopFor = (
+const virtualDesktop = (
   config: ScreenSharingVNCConfig,
-  commands: ScalerCommands,
-  locate: (configured: string) => PrivateSocket
-): VNCDesktop => ({
+  commands: ScalerCommands
+): SharedDisplay => ({
   config,
-  respond: vncScreenSharing(config, scalerFor(config, commands), locate)
+  scaler: scalerFor(config, commands)
 })
 
 const scalerFor = (

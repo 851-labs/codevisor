@@ -80,6 +80,7 @@ export interface CodevisorServerConfig {
   readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops?: VNCDesktops | undefined
   readonly desktop?: import("./desktop/desktop-manager.js").DesktopManager | undefined
+  readonly screen?: import("./desktop/screen-share.js").ScreenShare | undefined
   readonly simulators?: Simulators | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   readonly cloud?: CloudServerControl | undefined
@@ -103,16 +104,18 @@ export interface ScreenSharingVNCConfig {
   readonly xauthority?: string
   readonly defaultWidth?: number
   readonly defaultHeight?: number
+  readonly screen?: true
 }
 
 export interface VNCDesktop {
-  readonly config?: ScreenSharingVNCConfig
+  readonly displays: ReadonlyArray<ScreenSharingVNCConfig>
   readonly respond: (request: ScreenSharingRequest) => Promise<unknown>
 }
 
 export interface VNCDesktops {
   readonly current: () => VNCDesktop | undefined
   readonly relays?: import("./routes/vnc-relays.js").VNCRelays
+  readonly viewerJoined?: (display: ScreenSharingVNCConfig) => void
 }
 
 export interface CloudServerControl {

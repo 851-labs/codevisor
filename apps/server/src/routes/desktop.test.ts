@@ -1,7 +1,8 @@
-import type { DesktopStatus } from "@codevisor/api"
+import type { DesktopStatus, ScreenStatus } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import type { DesktopManager } from "../desktop/desktop-manager.js"
+import type { ScreenShare } from "../desktop/screen-share.js"
 import { HttpFailure } from "../server-context.js"
 import { jsonRequest, makeServices, readWebSocketEvents, startWithApp } from "../test-support.js"
 import { field } from "../unknown-values.js"
@@ -34,9 +35,26 @@ const recordingManager = (overrides: Partial<DesktopManager> = {}) => {
   return { manager, calls }
 }
 
-const start = async (manager: DesktopManager | undefined) => {
+const recordingScreen = () => {
+  const calls: string[] = []
+  const answer = (name: string, state: ScreenStatus["state"]) => async () => {
+    calls.push(name)
+    return { state, missing: [], others: [] }
+  }
+  const screen: ScreenShare = {
+    status: answer("status", "waiting"),
+    installPackages: answer("installPackages", "none"),
+    setUp: answer("setUp", "waiting"),
+    remove: answer("remove", "none"),
+    follow: async () => undefined,
+    viewerJoined: () => undefined
+  }
+  return { screen, calls }
+}
+
+const start = async (manager: DesktopManager | undefined, screen?: ScreenShare) => {
   const { services } = await makeServices()
-  const server = await startWithApp(services, undefined, { desktop: manager })
+  const server = await startWithApp(services, undefined, { desktop: manager, screen })
   const call = (method: string, path = "", headers: Record<string, string> = {}) =>
     jsonRequest(server, `/v1/desktop${path}`, { method, headers })
   return { server, call }
@@ -52,6 +70,32 @@ describe("the desktop routes", () => {
     expect((await call("POST", "/start")).body).toMatchObject({ state: "running" })
     expect((await call("DELETE")).body).toMatchObject({ state: "none" })
     expect(calls).toEqual(["status", "installPackages", "replaceOld", "start", "remove"])
+  })
+
+  it("map the screen's requests to the screen share, and answer with both statuses", async () => {
+    const { manager } = recordingManager()
+    const { screen, calls } = recordingScreen()
+    const { call } = await start(manager, screen)
+    const withTheScreen = { state: "none", screen: { state: "waiting", missing: [], others: [] } }
+
+    expect((await call("GET")).body).toMatchObject(withTheScreen)
+    expect((await call("POST", "/screen/packages")).body).toMatchObject(withTheScreen)
+    expect((await call("POST", "/screen")).body).toMatchObject(withTheScreen)
+    expect((await call("DELETE", "/screen")).body).toMatchObject(withTheScreen)
+    expect(calls.filter((name) => name !== "status")).toEqual([
+      "installPackages",
+      "setUp",
+      "remove"
+    ])
+  })
+
+  it("say so when this server can't share a screen", async () => {
+    const { call } = await start(recordingManager().manager)
+
+    expect(await call("POST", "/screen")).toMatchObject({
+      status: 501,
+      body: { error: "This server can't share the machine's screen" }
+    })
   })
 
   it("pass on that replacing a desktop Codevisor didn't set up was asked for, and only then", async () => {

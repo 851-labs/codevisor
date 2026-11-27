@@ -4,6 +4,11 @@ import type { DesktopState, DesktopStatus, DesktopSudo } from "@codevisor/api"
 
 import { type PrivateSocket, privateSocket } from "../routes/private-socket.js"
 import {
+  DESKTOP_ENTRY,
+  withDisplayEntry,
+  withoutDisplayEntry
+} from "../routes/screen-sharing-config.js"
+import {
   type DesktopSetup,
   desktopSetup,
   recordedDesktopService,
@@ -291,7 +296,14 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
       desktop: "xfce",
       defaultSize
     }
-    system.writeText(configPath, `${JSON.stringify({ vnc, service: runs.kind }, null, 2)}\n`)
+    const entry = { id: DESKTOP_ENTRY, vnc, service: runs.kind }
+    system.writeText(configPath, withDisplayEntry(system.readText(configPath), entry))
+  }
+
+  const forgetTheDesktop = (): void => {
+    const rest = withoutDisplayEntry(system.readText(configPath), DESKTOP_ENTRY)
+    if (rest === undefined) system.remove(configPath)
+    else system.writeText(configPath, rest)
   }
 
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
@@ -365,7 +377,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     const theirs = someoneElsesConfig(current, other)
     if (theirs && asked.unshareUnmanaged !== true) throw new HttpFailure(409, notOursToRemove)
 
-    system.remove(configPath)
+    forgetTheDesktop()
     changed()
     if (theirs) return status()
 

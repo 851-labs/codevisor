@@ -15,7 +15,7 @@ import {
 } from "../server-context.js"
 import { attachLivePreviewSocket, LIVE_PREVIEW_SOCKET_PATH } from "./live-preview-socket.js"
 import { adaptDirectSocket } from "./net-direct.js"
-import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
+import { displayIdOf, spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
 import { attachSyncEventSocket } from "./sync-event-socket.js"
 import { attachTerminalSocket } from "./terminal-socket.js"
 
@@ -110,11 +110,14 @@ const acceptLivePreview = (upgrade: SocketUpgrade, url: URL): boolean => {
 const spliceScreenSharing = (upgrade: SocketUpgrade, url: URL): boolean => {
   const { config, request, socket, head, webSocketServer } = upgrade
   if (!isGetTo(request, url, VNC_SOCKET_PATH)) return false
-  const relayed = config.desktops?.current()?.config
+  const displays = config.desktops?.current()?.displays ?? []
+  const asked = url.searchParams.get("displayId")
+  const relayed = displays.find((display) => displayIdOf(display) === asked) ?? displays[0]
   if (relayed === undefined) return false
 
   spliceVNCSocket(relayed, url, request, socket, head, webSocketServer, {
-    relays: config.desktops?.relays
+    relays: config.desktops?.relays,
+    viewerJoined: config.desktops?.viewerJoined
   })
   return true
 }

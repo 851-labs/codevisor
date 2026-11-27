@@ -59,6 +59,14 @@ const fakeSession = (
 
 const running = (path: string) => ({ path })
 
+const refusing = async () => {
+  throw new Error("The desktop session isn't running")
+}
+
+const throwingSomethingElse = async () => {
+  throw "not an Error"
+}
+
 describe("Xfce desktop scale (851-2339)", () => {
   it("sets 2× through the session's own D-Bus, with the 2× borders, and restarts the desktop once", async () => {
     const session = fakeSession()
@@ -153,13 +161,10 @@ describe("Xfce desktop scale (851-2339)", () => {
       displayId: "vnc:desktop"
     }
     const scales: (1 | 2)[] = []
-    const provider = vncScreenSharing(
-      config,
-      async (scale) => {
-        scales.push(scale)
-      },
-      running
-    )
+    const scaler = async (scale: 1 | 2) => {
+      scales.push(scale)
+    }
+    const provider = vncScreenSharing([{ config, scaler }], running)
     const capabilities = await provider({ ...request, operation: "capabilities" })
     expect(capabilities.displays[0]).toMatchObject({
       scales: [1, 2],
@@ -172,21 +177,20 @@ describe("Xfce desktop scale (851-2339)", () => {
       (await provider({ ...request, operation: "setScale", displayId: "vnc:1", scale: 2 })).status
     ).toBe("error")
     expect((await provider({ ...request, operation: "setScale" })).status).toBe("error")
-    const failing = vncScreenSharing(config, async () => {
-      throw new Error("The desktop session isn't running")
-    })
+    const failing = vncScreenSharing([{ config, scaler: refusing }])
     expect(await failing({ ...request, operation: "setScale", scale: 1 })).toMatchObject({
       status: "error",
       message: "The desktop session isn't running"
     })
-    const odd = vncScreenSharing(config, async () => {
-      throw "not an Error"
-    })
+    const odd = vncScreenSharing([{ config, scaler: throwingSomethingElse }])
     expect(await odd({ ...request, operation: "setScale", scale: 2 })).toMatchObject({
       status: "error",
       message: "The desktop's scale couldn't be set"
     })
-    const plain = vncScreenSharing({ socket: config.socket, name: "Desktop" }, undefined, running)
+    const plain = vncScreenSharing(
+      [{ config: { socket: config.socket, name: "Desktop" } }],
+      running
+    )
     expect(await plain({ ...request, operation: "capabilities" })).toEqual({
       version: 1,
       status: "available",

@@ -6,6 +6,7 @@ import { Effect, Option } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
 
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
+import { screenRemoveCommand, screenSetupCommand } from "./desktop-screen.js"
 import {
   type DesktopCliDeps,
   desktopRemoveCommand,
@@ -159,6 +160,9 @@ export const makeMachinesCommand = (runCli: RunCli) => {
 const yes = (description: string) =>
   Flag.boolean("yes").pipe(Flag.withAlias("y"), Flag.withDescription(description))
 
+const screen = (description: string) =>
+  Flag.boolean("screen").pipe(Flag.withDescription(description))
+
 export const makeDesktopCommand = (
   runDesktopCli: (command: (deps: DesktopCliDeps) => Promise<number>) => Effect.Effect<void>,
   runInForeground: (dataDir: string | undefined) => Effect.Effect<void>
@@ -175,21 +179,29 @@ export const makeDesktopCommand = (
       port: portFlag,
       yes: yes(
         "Answer yes to setup's questions: replacing an older root desktop, or a desktop config Codevisor didn't write"
+      ),
+      screen: screen(
+        "Share this machine's real screen instead: the session the server's account is logged in to at the monitor"
       )
     },
-    ({ port, yes: agreed }) =>
-      runDesktopCli((deps) =>
-        desktopSetupCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })
-      )
+    ({ port, yes: agreed, screen: real }) =>
+      runDesktopCli((deps) => {
+        const options = { port: Option.getOrUndefined(port), yes: agreed }
+        return real ? screenSetupCommand(deps, options) : desktopSetupCommand(deps, options)
+      })
   ).pipe(
     Command.withDescription(
-      "Set up a desktop on this Linux machine that runs as the server's account and can be viewed from Codevisor"
+      "Set up a desktop on this Linux machine that runs as the server's account and can be viewed from Codevisor, or share its real screen with --screen"
     )
   )
 
   const status = Command.make("status", { port: portFlag }, ({ port }) =>
     runDesktopCli((deps) => desktopStatusCommand(deps, { port: Option.getOrUndefined(port) }))
-  ).pipe(Command.withDescription("Show whether this machine's desktop is set up and running"))
+  ).pipe(
+    Command.withDescription(
+      "Show whether this machine's desktop is set up and running, and whether its real screen is shared"
+    )
+  )
 
   const remove = Command.make(
     "remove",
@@ -197,13 +209,19 @@ export const makeDesktopCommand = (
       port: portFlag,
       yes: yes(
         "Don't ask before removing the desktop, or before unsharing one Codevisor didn't set up"
-      )
+      ),
+      screen: screen("Stop sharing this machine's real screen instead; nothing on it closes")
     },
-    ({ port, yes: agreed }) =>
-      runDesktopCli((deps) =>
-        desktopRemoveCommand(deps, { port: Option.getOrUndefined(port), yes: agreed })
-      )
-  ).pipe(Command.withDescription("Stop this machine's desktop, closing everything open in it"))
+    ({ port, yes: agreed, screen: real }) =>
+      runDesktopCli((deps) => {
+        const options = { port: Option.getOrUndefined(port), yes: agreed }
+        return real ? screenRemoveCommand(deps, options) : desktopRemoveCommand(deps, options)
+      })
+  ).pipe(
+    Command.withDescription(
+      "Stop this machine's desktop, closing everything open in it, or stop sharing its real screen with --screen"
+    )
+  )
 
   return Command.make("desktop").pipe(
     Command.withDescription("Set up, check, or remove this Linux machine's desktop"),
