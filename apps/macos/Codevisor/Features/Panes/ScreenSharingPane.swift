@@ -216,6 +216,12 @@ private struct ScreenSharingPaneView: View {
     .onChange(of: sharesDesktop) { _, shares in
       if shares { pane.store?.send(.retryButtonTapped) }
     }
+    .onChange(of: pane.store?.failure != nil) { _, failed in
+      if failed { setup?.send(.machineChanged) }
+    }
+    .onChange(of: setup?.phase == .ready) { _, ready in
+      if ready, pane.store?.failure != nil { pane.store?.send(.retryButtonTapped) }
+    }
     .modifier(
       MachineDesktopSetupUpkeepIfAny(
         machineId: pane.machineId, machineName: machineName, view: pane.id, store: setup))

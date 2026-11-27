@@ -7,6 +7,7 @@ struct MachineDesktopPreview: View {
   let machine: CodevisorMachine
   let isStreaming: Bool
   let onOpen: () -> Void
+  var onFailure: () -> Void = {}
   @State private var pane: ScreenSharingPane?
   @State private var isHovered = false
 
@@ -15,7 +16,7 @@ struct MachineDesktopPreview: View {
       if let pane, let viewer = pane.store {
         MachineDesktopCard(
           pane: pane, viewer: viewer, machineName: pane.machineName, isHovered: isHovered, onOpen: onOpen,
-          onRetry: { viewer.send(.retryButtonTapped) }
+          onRetry: { viewer.send(.retryButtonTapped) }, onFailure: onFailure
         )
         .onHover { isHovered = $0 }
         .background {

@@ -12,6 +12,7 @@ struct MachineDesktopCard: View {
   let isHovered: Bool
   let onOpen: () -> Void
   let onRetry: () -> Void
+  var onFailure: () -> Void = {}
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var settledShape: ScreenSharingPreviewShape?
 
@@ -31,6 +32,9 @@ struct MachineDesktopCard: View {
     .clipShape(WorkspaceInspectorCardShape.card)
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)
     .onChange(of: viewer.previewShape, initial: true) { _, shape in settle(on: shape) }
+    .onChange(of: viewer.failure != nil) { _, failed in
+      if failed { onFailure() }
+    }
   }
 
   private var preview: ScreenSharingPreview { viewer.preview }

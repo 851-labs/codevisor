@@ -218,6 +218,27 @@ struct MachineDesktopSetupTests {
     #expect(store.state.phase == .noDesktop(setUpBefore: false))
   }
 
+  @Test("A desktop that stops while it is shown turns into Failed on the next look, and Try Again starts it")
+  func aDesktopThatStopsWhileShown() async {
+    let stopped = Status(state: .stopped, problem: "nothing at /root/.codevisor/run/codevisor-desktop.sock")
+    let machine = Machine(statuses: [Self.running, stopped], started: Self.running)
+    let store = machine.store()
+    await store.send(.task)
+    await store.receive(\.looked)
+    #expect(store.state.phase == .ready)
+    await store.send(.machineChanged)
+    await store.receive(\.looked)
+    #expect(
+      store.state.phase
+        == .failed("The desktop on hetzner isn't running: nothing at /root/.codevisor/run/codevisor-desktop.sock"))
+    #expect(!store.state.showsDesktop(sharedByMachine: true))
+    await store.send(.tryAgainButtonTapped)
+    await store.receive(\.stepped)
+    await store.receive(\.started)
+    #expect(store.state.phase == .ready)
+    #expect(machine.calls.value == ["status", "status", "status", "start"])
+  }
+
   @Test("Try Again repeats what failed: a failed look looks again, and never installs or starts anything")
   func tryAgainAfterAFailedLook() async {
     let machine = Machine(statuses: [Self.bare], failure: .httpStatus(500, #"{"error":"The server is busy."}"#))

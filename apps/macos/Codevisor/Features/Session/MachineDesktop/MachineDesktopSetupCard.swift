@@ -15,7 +15,8 @@ struct MachineDesktopSetupCard: View {
   var body: some View {
     ZStack {
       if store.state.showsDesktop(sharedByMachine: sharesDesktop) {
-        MachineDesktopPreview(machine: machine, isStreaming: isStreaming, onOpen: onOpen)
+        MachineDesktopPreview(
+          machine: machine, isStreaming: isStreaming, onOpen: onOpen, onFailure: { store.send(.machineChanged) })
       } else {
         MachineDesktopSetupStatus(store: store, view: view, size: .card, onOpenTerminal: onOpenTerminal)
           .frame(minHeight: 120)
