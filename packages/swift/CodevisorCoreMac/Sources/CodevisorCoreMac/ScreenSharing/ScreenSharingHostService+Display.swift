@@ -171,6 +171,7 @@ extension ScreenSharingHostService {
     guard let current else { return }
     noteSharedDisplaySize(current)
     Task { await refreshDisplays(of: current) }
+    Task { [capture = current.capture] in try? await capture.followDisplayRefresh() }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = onlineDisplays()
     guard
