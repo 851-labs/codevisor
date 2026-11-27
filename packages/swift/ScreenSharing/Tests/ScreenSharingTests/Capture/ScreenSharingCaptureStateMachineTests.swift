@@ -16,7 +16,7 @@
       #expect(fixture.stream.calls == [.start])
       let settings = try #require(fixture.target.settings)
       #expect(settings.width == 1920 && settings.height == 1080)
-      #expect(settings.interval == CMTime(value: 1, timescale: 60))
+      #expect(settings.interval == ScreenSharingCaptureCadence(displayRefreshHz: nil).minimumFrameInterval)
       #expect(settings.queueDepth == 3)
       #expect(settings.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
       #expect(settings.showsCursor && !settings.capturesAudio && settings.scalesToFit)

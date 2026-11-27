@@ -24,6 +24,8 @@
     public private(set) var capturesAudio = false
     public let audio = ScreenSharingCaptureAudioTap()
     private var video: ScreenSharingVideoConfiguration?
+    public private(set) var cadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
+    private var displayRefresh: @MainActor () -> Double? = { nil }
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
@@ -53,6 +55,7 @@
       guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
         throw ScreenSharingError.unavailable("Selected display is unavailable.")
       }
+      displayRefresh = { ScreenSharingDisplayRefresh.hz(of: displayID) }
       try await startResolved(
         target: SCContentFilter(display: display, excludingWindows: []), configuration: configuration,
         sink: sink, metrics: metrics, generation: generation)
@@ -67,9 +70,11 @@
 
     func start(
       target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
-      sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
+      sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics,
+      displayRefresh: (@MainActor () -> Double?)? = nil
     ) async throws {
       guard stream == nil, !starting else { throw ScreenSharingError.invalid("Capture is already running.") }
+      if let displayRefresh { self.displayRefresh = displayRefresh }
       generation += 1
       let generation = generation
       starting = true
@@ -86,9 +91,11 @@
       guard [kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA].contains(pixelFormat) else {
         throw ScreenSharingError.invalid("Unsupported capture pixel format.")
       }
+      cadence = ScreenSharingCaptureCadence(displayRefreshHz: displayRefresh())
       let streamConfiguration = Self.streamConfiguration(
         configuration, pixelFormat: pixelFormat, showsCursor: showsCursor,
-        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth)
+        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth, cadence: cadence)
+      label(cadence, on: metrics)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
       metrics.label("captureDynamicRange", dynamicRange.rawValue)
@@ -129,9 +136,29 @@
       try await stream.updateConfiguration(
         Self.streamConfiguration(
           configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
-          dynamicRange: dynamicRange, queueDepth: queueDepth))
+          dynamicRange: dynamicRange, queueDepth: queueDepth, cadence: cadence))
       guard self.generation == generation else { throw CancellationError() }
       video = configuration
+    }
+
+    public func followDisplayRefresh() async throws {
+      let following = ScreenSharingCaptureCadence(displayRefreshHz: displayRefresh())
+      guard following != cadence, stream != nil else { return }
+
+      let previous = cadence
+      cadence = following
+      do { try await reconfigure() } catch {
+        cadence = previous
+        throw error
+      }
+      if let metrics = output?.metrics { label(cadence, on: metrics) }
+    }
+
+    private func label(_ cadence: ScreenSharingCaptureCadence, on metrics: ScreenSharingMetrics) {
+      metrics.label("captureDisplayRefreshHz", String(cadence.displayRefreshHz))
+      metrics.label(
+        "captureMinimumFrameIntervalNs",
+        String(cadence.minimumFrameInterval.convertScale(1_000_000_000, method: .default).value))
     }
 
     public func setShowsCursor(_ shows: Bool) async throws {
@@ -207,7 +234,8 @@
 
     static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool,
-      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth
+      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth,
+      cadence: ScreenSharingCaptureCadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
     ) -> SCStreamConfiguration {
       let config: SCStreamConfiguration
       if dynamicRange == .high {
@@ -219,7 +247,7 @@
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
-      config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(video.framesPerSecond))
+      config.minimumFrameInterval = cadence.minimumFrameInterval(requesting: video.framesPerSecond)
       config.queueDepth = queueDepth
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio
