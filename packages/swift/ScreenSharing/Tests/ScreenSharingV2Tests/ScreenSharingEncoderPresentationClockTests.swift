@@ -31,4 +31,35 @@ struct ScreenSharingEncoderPresentationClockTests {
 
     #expect(times == [5_000, 5_001, 5_002])
   }
+
+  @Test(arguments: [(2, 30, 2), (2, 1, 1), (2, 3, 2), (1, 30, 1), (1.5, 30, 1.5), (0.5, 30, 1)])
+  func aFrameAfterAPauseIsStampedNoFurtherThanItsContentIntervalBetweenOneAndTwoFrames(
+    contentFrames: Double, submittedFrames: Int64, stampedFrames: Double
+  ) {
+    var clock = ScreenSharingEncoderPresentationClock(framesPerSecond: 60)
+
+    let first = clock.presentationNs(submittedAtNs: 5_000)
+    let contentIntervalNs = Int64(contentFrames * Double(Self.frameNs))
+    let late = clock.presentationNs(
+      submittedAtNs: 5_000 + submittedFrames * Self.frameNs, gap: .content(contentIntervalNs))
+
+    #expect(late - first == Int64(stampedFrames * Double(Self.frameNs)))
+  }
+
+  @Test func aFrameOnTheWallClockAfterAPauseIsStampedTheWholePauseLater() {
+    var clock = ScreenSharingEncoderPresentationClock(framesPerSecond: 60)
+
+    let first = clock.presentationNs(submittedAtNs: 5_000)
+    let late = clock.presentationNs(submittedAtNs: 5_000 + 30 * Self.frameNs, gap: .wallClock)
+
+    #expect(late - first == 30 * Self.frameNs)
+  }
+
+  @Test func framesSubmittedCloserThanTheShortestGapAreSpreadToIt() {
+    var clock = ScreenSharingEncoderPresentationClock(framesPerSecond: 60, shortestGapNs: 4_000)
+
+    let times = [5_000, 5_001, 5_002 + Self.frameNs].map { clock.presentationNs(submittedAtNs: $0) }
+
+    #expect(times == [5_000, 9_000, 9_000 + Self.frameNs + 1])
+  }
 }

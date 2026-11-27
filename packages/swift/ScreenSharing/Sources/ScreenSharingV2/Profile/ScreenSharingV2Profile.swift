@@ -20,6 +20,7 @@ public enum ScreenSharingV2Profile {
   public static let initialEstimateKbps: UInt32 = 100_000
 
   public static var frameIntervalUs: UInt32 { UInt32(1_000_000 / framesPerSecond) }
+  static var frameNs: Int64 { 1_000_000_000 / Int64(framesPerSecond) }
   public static var refinementGapNs: Int64 { Int64(refinementGapFrames) * 1_000_000_000 / Int64(framesPerSecond) }
 
   public static func tileLayout(for configuration: ScreenSharingVideoConfiguration) -> ScreenSharingV2TileLayout {

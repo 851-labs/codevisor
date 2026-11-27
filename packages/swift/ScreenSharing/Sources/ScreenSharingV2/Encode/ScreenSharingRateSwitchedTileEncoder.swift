@@ -240,13 +240,6 @@ public final class ScreenSharingRateSwitchedTileEncoder: ScreenSharingTileEncode
   private static func forcingKeyframes(
     on tiles: Set<Int>, of request: ScreenSharingTileEncodeRequest
   ) -> ScreenSharingTileEncodeRequest {
-    guard !tiles.isEmpty else { return request }
-
-    var refreshes = request.refreshes
-    for tile in tiles { refreshes[tile] = .keyframe }
-    return ScreenSharingTileEncodeRequest(
-      pixelBuffer: request.pixelBuffer, sourceTimestampNs: request.sourceTimestampNs, capturedNs: request.capturedNs,
-      update: request.update, refreshes: refreshes, smallTiles: request.smallTiles,
-      repeatedTiles: request.repeatedTiles)
+    request.refreshing(tiles, with: .keyframe)
   }
 }

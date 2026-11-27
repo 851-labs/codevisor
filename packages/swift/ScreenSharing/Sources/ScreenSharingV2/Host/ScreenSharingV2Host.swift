@@ -35,6 +35,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var refinementWakeNs: Int64?
   private var refreshPhase: ScreenSharingV2RefreshPhase
   private var deferredCapture = false
+  private var lastChangeSourceNs: [Int: Int64] = [:]
   private var inFlight: [Int: Int] = [:]
   private static let pipelinedChanges = 2
   private static let networkFeedbackIntervalNs: Int64 = 250_000_000
@@ -115,10 +116,27 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       among: encoder.keepsItsCapForSmallChanges ? refinement.sharpenedLast : [])
     metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     metrics.increment("tilesUnchangedByPixels", by: candidates.count - changes.changed.count)
+    let changedAgain = reported.subtracting(candidates)
+    let first = slot.waiting == nil && slot.lastEncoded == nil
+    let touchedAgain = capture.frame.dirtyRects != nil || first ? changedAgain : []
     let replaced = slot.offer(
-      capture, tiles: changes.changed, small: changes.small, changedAgain: reported.subtracting(candidates))
+      timed(capture, changed: changes.changed.union(touchedAgain)), tiles: changes.changed,
+      small: changes.small, changedAgain: changedAgain)
     if replaced { metrics.increment("captureReplacedBeforeEncode") }
     pump()
+  }
+
+  private func timed(_ capture: ScreenSharingV2Capture, changed tiles: Set<Int>) -> ScreenSharingV2Capture {
+    let sourceNs = capture.frame.timestampNs
+    var timed = capture
+    timed.contentIntervalsNs = slot.waiting?.contentIntervalsNs ?? [:]
+    for tile in tiles {
+      if let intervalNs = lastChangeSourceNs[tile].map({ sourceNs - $0 }) {
+        timed.contentIntervalsNs[tile] = max(intervalNs, ScreenSharingV2Profile.frameNs)
+      }
+      lastChangeSourceNs[tile] = sourceNs
+    }
+    return timed
   }
 
   private func pump() {

@@ -9,11 +9,13 @@ struct ScreenSharingVCPEncoderState {
   var tile = 0
   var highestQP = ScreenSharingVCPRate.highestFrameQP
   var rate = ScreenSharingVCPRate(bitsPerSecond: ScreenSharingV2Profile.bitrateCeiling, tiles: 1)
+  var clock = ScreenSharingEncoderPresentationClock(
+    framesPerSecond: ScreenSharingV2Profile.framesPerSecond, shortestGapNs: ScreenSharingVCPRate.shortestFrameGapNs)
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
   private var lastEncodedCapture: Int64?
   private var nextSubmission: UInt64 = 0
-  private var lastPresentationNs: Int64 = 0
   private var sharpenedLast = false
+  private var clockBefore: (submission: UInt64, clock: ScreenSharingEncoderPresentationClock)?
 
   mutating func begin(
     _ request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh?, atNs nowNs: Int64
@@ -24,14 +26,25 @@ struct ScreenSharingVCPEncoderState {
     if let failure { throw ScreenSharingError.unavailable("VCP failed: \(failure)") }
 
     nextSubmission += 1
-    lastPresentationNs = max(lastPresentationNs + ScreenSharingVCPRate.shortestFrameGapNs, nowNs)
+    clockBefore = (nextSubmission, clock)
+    let presentationNs = clock.presentationNs(submittedAtNs: nowNs, gap: gap(for: request, refresh: refresh))
     let submission = ScreenSharingVCPSubmission(
       id: nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
-      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: lastPresentationNs,
+      capturedNs: request.capturedNs, refresh: refresh, submittedNs: nowNs, presentationNs: presentationNs,
       highestQP: highestQP(for: request, refresh: refresh), repeatsCapture: request.repeatedTiles.contains(tile))
     sharpenedLast = request.update.isRefinement
     inFlight[submission.id] = submission
     return submission
+  }
+
+  private func gap(
+    for request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh?
+  ) -> ScreenSharingEncoderPresentationClock.Gap {
+    guard refresh == nil else { return .standard }
+    if request.update.isRefinement { return .wallClock }
+    guard let intervalNs = request.contentIntervalsNs[tile] else { return .standard }
+
+    return .content(intervalNs)
   }
 
   private func highestQP(for request: ScreenSharingTileEncodeRequest, refresh: ScreenSharingTileRefresh?) -> Int {
@@ -48,6 +61,8 @@ struct ScreenSharingVCPEncoderState {
 
   mutating func abandon(_ submission: ScreenSharingVCPSubmission) {
     inFlight[submission.id] = nil
+    if let clockBefore, clockBefore.submission == submission.id { clock = clockBefore.clock }
+    clockBefore = nil
   }
 
   mutating func receive(_ output: ScreenSharingVCPOutput) -> ScreenSharingVCPReceipt? {

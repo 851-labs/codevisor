@@ -55,6 +55,21 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
     #expect(fast.requests.map(\.refreshes) == [[1: .keyframe], [2: .keyframe]])
   }
 
+  @Test func aRequestTheSwitchTurnsIntoKeyframesKeepsEverythingElseTheHostSent() throws {
+    let encoder = try switched(bitrate: Self.fastBitrate)
+    try encoder.encode(try Self.request(id: 1, tiles: [0, 1, 2, 3]))
+
+    switchToFast(encoder)
+    let sent = try Self.request(id: 2, tiles: [0, 1], small: [1], contentIntervalsNs: [0: 16_666_666])
+    try encoder.encode(sent)
+
+    let forced = try #require(fast.requests.first)
+    #expect(forced.refreshes == [0: .keyframe, 1: .keyframe])
+    #expect(forced.smallTiles == sent.smallTiles)
+    #expect(forced.contentIntervalsNs == sent.contentIntervalsNs)
+    #expect(forced.sourceTimestampNs == sent.sourceTimestampNs && forced.update == sent.update)
+  }
+
   @Test func aTileWhoseFirstEncodeOnTheFastEncoderFailedIsStillAKeyframeOnTheNextTry() throws {
     let failing = FailingTileEncoder(fast)
     let encoder = try switched(bitrate: Self.fastBitrate, fast: failing)
@@ -288,12 +303,14 @@ struct ScreenSharingRateSwitchedTileEncoderTests {
   }
 
   private static func request(
-    id: UInt32, tiles: Set<Int>, refreshes: [Int: ScreenSharingTileRefresh] = [:]
+    id: UInt32, tiles: Set<Int>, refreshes: [Int: ScreenSharingTileRefresh] = [:], small: Set<Int> = [],
+    contentIntervalsNs: [Int: Int64] = [:]
   ) throws -> ScreenSharingTileEncodeRequest {
     let frame = try TestPixels.frame(shade: 100, timestampNs: Int64(id))
     return ScreenSharingTileEncodeRequest(
       pixelBuffer: frame.pixelBuffer, sourceTimestampNs: frame.timestampNs, capturedNs: frame.timestampNs,
-      update: ScreenSharingTileUpdate(id: id, tiles: tiles), refreshes: refreshes)
+      update: ScreenSharingTileUpdate(id: id, tiles: tiles), refreshes: refreshes, smallTiles: small,
+      contentIntervalsNs: contentIntervalsNs)
   }
 }
 
