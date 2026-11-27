@@ -16,7 +16,7 @@
       #expect(fixture.stream.calls == [.start])
       let settings = try #require(fixture.target.settings)
       #expect(settings.width == 1920 && settings.height == 1080)
-      #expect(settings.interval == CMTime(value: 1, timescale: 60))
+      #expect(settings.interval == ScreenSharingCaptureCadence(displayRefreshHz: nil).minimumFrameInterval)
       #expect(settings.queueDepth == 3)
       #expect(settings.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
       #expect(settings.showsCursor && !settings.capturesAudio && settings.scalesToFit)
@@ -423,11 +423,13 @@
     private let lock = NSLock()
     private var recorded: [Call] = []
     private var lastUpdate: Settings?
+    private var allUpdates: [Settings] = []
     private var failures: [Call: any Error] = [:]
     private var gates: [Call: CaptureGate] = [:]
 
     var calls: [Call] { lock.withLock { recorded } }
     var updated: Settings? { lock.withLock { lastUpdate } }
+    var updates: [Settings] { lock.withLock { allUpdates } }
     var startFailure: (any Error)? {
       get { lock.withLock { failures[.start] } }
       set { lock.withLock { failures[.start] = newValue } }
@@ -469,6 +471,7 @@
       try lock.withLock {
         recorded.append(.update)
         lastUpdate = settings
+        allUpdates.append(settings)
         if let failure = failures[.update] { throw failure }
       }
     }
@@ -484,14 +487,14 @@
   final class CaptureGate: @unchecked Sendable {
     let entered = TestSignal()
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     private var released = false
 
     func enter() async {
       await withCheckedContinuation { continuation in
         let open = lock.withLock {
           if released { return true }
-          self.continuation = continuation
+          continuations.append(continuation)
           return false
         }
         entered.signal()
@@ -502,11 +505,10 @@
     func release() {
       let pending = lock.withLock {
         released = true
-        let pending = continuation
-        continuation = nil
-        return pending
+        defer { continuations = [] }
+        return continuations
       }
-      pending?.resume()
+      for continuation in pending { continuation.resume() }
     }
   }
 

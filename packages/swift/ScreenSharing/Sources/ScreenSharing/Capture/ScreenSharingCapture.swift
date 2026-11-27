@@ -24,6 +24,10 @@
     public private(set) var capturesAudio = false
     public let audio = ScreenSharingCaptureAudioTap()
     private var video: ScreenSharingVideoConfiguration?
+    public private(set) var cadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
+    private var displayRefresh: @MainActor () -> Double? = { nil }
+    private var reconfigurations = ScreenSharingCaptureTurns()
+    var queuedReconfigurations: Int { reconfigurations.queued }
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
@@ -53,6 +57,7 @@
       guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
         throw ScreenSharingError.unavailable("Selected display is unavailable.")
       }
+      displayRefresh = { ScreenSharingDisplayRefresh.hz(of: displayID) }
       try await startResolved(
         target: SCContentFilter(display: display, excludingWindows: []), configuration: configuration,
         sink: sink, metrics: metrics, generation: generation)
@@ -60,16 +65,20 @@
 
     package func start(
       filter: SCContentFilter, configuration: ScreenSharingVideoConfiguration, sink: any ScreenSharingFrameSink,
-      metrics: ScreenSharingMetrics
+      metrics: ScreenSharingMetrics, displayID: CGDirectDisplayID? = nil
     ) async throws {
-      try await start(target: filter, configuration: configuration, sink: sink, metrics: metrics)
+      try await start(
+        target: filter, configuration: configuration, sink: sink, metrics: metrics,
+        displayRefresh: { displayID.flatMap(ScreenSharingDisplayRefresh.hz(of:)) })
     }
 
     func start(
       target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
-      sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
+      sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics,
+      displayRefresh: @escaping @MainActor () -> Double? = { nil }
     ) async throws {
       guard stream == nil, !starting else { throw ScreenSharingError.invalid("Capture is already running.") }
+      self.displayRefresh = displayRefresh
       generation += 1
       let generation = generation
       starting = true
@@ -86,9 +95,11 @@
       guard [kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA].contains(pixelFormat) else {
         throw ScreenSharingError.invalid("Unsupported capture pixel format.")
       }
+      cadence = ScreenSharingCaptureCadence(displayRefreshHz: displayRefresh())
       let streamConfiguration = Self.streamConfiguration(
         configuration, pixelFormat: pixelFormat, showsCursor: showsCursor,
-        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth)
+        capturesAudio: capturesAudio, dynamicRange: dynamicRange, queueDepth: queueDepth, cadence: cadence)
+      label(cadence, on: metrics)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
       metrics.label("captureDynamicRange", dynamicRange.rawValue)
@@ -104,6 +115,7 @@
         }
       }
       let stream = try target.makeCaptureStream(configuration: streamConfiguration, output: output)
+      reconfigurations = ScreenSharingCaptureTurns()
       self.output = output
       self.stream = stream
       video = configuration
@@ -122,6 +134,21 @@
     }
 
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
+      guard stream != nil, output != nil else { throw ScreenSharingError.unavailable("Capture is not running.") }
+      try await inTurn { [self] in try await apply(configuration) }
+    }
+
+    private func inTurn(_ work: @escaping @MainActor () async throws -> Void) async throws {
+      let queue = reconfigurations
+      try await queue.run { [self] in
+        await startSettled()
+        guard queue === reconfigurations else { return try await inTurn(work) }
+
+        try await work()
+      }
+    }
+
+    private func apply(_ configuration: ScreenSharingVideoConfiguration) async throws {
       guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
       output.changes.reconfigurationBegan()
@@ -129,33 +156,68 @@
       try await stream.updateConfiguration(
         Self.streamConfiguration(
           configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
-          dynamicRange: dynamicRange, queueDepth: queueDepth))
+          dynamicRange: dynamicRange, queueDepth: queueDepth, cadence: cadence))
       guard self.generation == generation else { throw CancellationError() }
       video = configuration
     }
 
+    public func followDisplayRefresh() async throws {
+      try await inTurn { [self] in try await applyDisplayRefresh() }
+    }
+
+    private func applyDisplayRefresh() async throws {
+      guard let refreshHz = displayRefresh(), let video, stream != nil else { return }
+
+      let following = ScreenSharingCaptureCadence(displayRefreshHz: refreshHz)
+      guard following.displayRefreshHz != cadence.displayRefreshHz else { return }
+
+      let previous = cadence
+      let generation = generation
+      cadence = following
+      if following != previous {
+        do { try await apply(video) } catch {
+          if self.generation == generation { cadence = previous }
+          throw error
+        }
+      }
+      if self.generation == generation, let metrics = output?.metrics { label(cadence, on: metrics) }
+    }
+
+    private func label(_ cadence: ScreenSharingCaptureCadence, on metrics: ScreenSharingMetrics) {
+      metrics.label("captureDisplayRefreshHz", String(cadence.displayRefreshHz))
+      metrics.label(
+        "captureMinimumFrameIntervalNs",
+        String(cadence.minimumFrameInterval.convertScale(1_000_000_000, method: .default).value))
+    }
+
     public func setShowsCursor(_ shows: Bool) async throws {
-      guard shows != showsCursor else { return }
-      let previous = showsCursor
-      showsCursor = shows
-      do { try await reconfigure() } catch {
-        showsCursor = previous
-        throw error
+      try await inTurn { [self] in
+        guard shows != showsCursor else { return }
+
+        let previous = showsCursor
+        showsCursor = shows
+        do { try await applyCurrent() } catch {
+          showsCursor = previous
+          throw error
+        }
       }
     }
 
     public func setDynamicRange(_ range: ScreenSharingDynamicRange) async throws {
-      guard range != dynamicRange else { return }
       guard range == .standard || pixelFormat == kCVPixelFormatType_32BGRA else {
         throw ScreenSharingError.invalid("High dynamic range needs a 4:4:4 capture.")
       }
-      let previous = dynamicRange
-      dynamicRange = range
-      do { try await reconfigure() } catch {
-        dynamicRange = previous
-        throw error
+      try await inTurn { [self] in
+        guard range != dynamicRange else { return }
+
+        let previous = dynamicRange
+        dynamicRange = range
+        do { try await applyCurrent() } catch {
+          dynamicRange = previous
+          throw error
+        }
+        output?.metrics.label("captureDynamicRange", range.rawValue)
       }
-      output?.metrics.label("captureDynamicRange", range.rawValue)
     }
 
     public func setCapturesAudio(_ captures: Bool) async throws {
@@ -163,15 +225,24 @@
       guard captures != capturesAudio else { return }
       changing += 1
       defer { changing -= 1 }
+      guard captures, stream != nil, let restart, let video else {
+        return try await inTurn { [self] in
+          let previous = capturesAudio
+          capturesAudio = captures
+          do { try await applyCurrent() } catch {
+            capturesAudio = previous
+            throw error
+          }
+        }
+      }
+
       let previous = capturesAudio
       capturesAudio = captures
       do {
-        if captures, stream != nil, let restart, let video {
-          try await stop()
-          try await start(target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics)
-        } else {
-          try await reconfigure()
-        }
+        try await stop()
+        try await start(
+          target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics,
+          displayRefresh: displayRefresh)
       } catch {
         capturesAudio = previous
         throw error
@@ -199,15 +270,16 @@
       for waiter in waiters { waiter.resume() }
     }
 
-    private func reconfigure() async throws {
-      await startSettled()
+    private func applyCurrent() async throws {
       guard let video, stream != nil else { return }
-      try await update(configuration: video)
+
+      try await apply(video)
     }
 
     static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool,
-      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth
+      dynamicRange: ScreenSharingDynamicRange = .standard, queueDepth: Int = defaultQueueDepth,
+      cadence: ScreenSharingCaptureCadence = ScreenSharingCaptureCadence(displayRefreshHz: nil)
     ) -> SCStreamConfiguration {
       let config: SCStreamConfiguration
       if dynamicRange == .high {
@@ -219,7 +291,7 @@
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
-      config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(video.framesPerSecond))
+      config.minimumFrameInterval = cadence.minimumFrameInterval(requesting: video.framesPerSecond)
       config.queueDepth = queueDepth
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio

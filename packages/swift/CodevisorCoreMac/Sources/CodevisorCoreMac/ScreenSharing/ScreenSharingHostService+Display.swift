@@ -167,10 +167,24 @@ extension ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  func followDisplayRefresh(_ session: ScreenSharingHostSession) {
+    session.refreshFollow?.cancel()
+    session.refreshFollow = Task { [weak session] in
+      guard let session, !session.stopping, !Task.isCancelled else { return }
+      do { try await session.capture.followDisplayRefresh() } catch is CancellationError {
+        return
+      } catch {
+        Self.logger.error(
+          "Following the display's refresh rate failed: \(error.localizedDescription, privacy: .public)")
+      }
+    }
+  }
+
   func screenParametersChanged() {
     guard let current else { return }
     noteSharedDisplaySize(current)
     Task { await refreshDisplays(of: current) }
+    followDisplayRefresh(current)
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = onlineDisplays()
     guard

@@ -43,6 +43,7 @@ final class ScreenSharingHostSession {
   var pendingResize: Task<Void, Never>?
   var capturing: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)?
   var resizing: Task<Void, Never>?
+  var refreshFollow: Task<Void, Never>?
   var ownDisplayChangeUntil: TimeInterval = 0
   var state = "connecting"
   var notice: String?

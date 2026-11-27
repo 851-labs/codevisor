@@ -368,6 +368,7 @@ final class ScreenSharingHostService {
     session.stopMediaPublishing()
     session.pendingResize?.cancel()
     session.resizing?.cancel()
+    session.refreshFollow?.cancel()
     session.peer.close()
     session.captureTask?.cancel()
     let ending = Task { [self] in

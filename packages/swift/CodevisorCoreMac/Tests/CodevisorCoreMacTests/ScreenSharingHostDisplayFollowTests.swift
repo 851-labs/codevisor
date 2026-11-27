@@ -244,4 +244,49 @@ struct ScreenSharingHostDisplayFollowTests {
       #expect(session.displayFollow == nil && session.displayID == Fixture.displayID(of: Self.wide))
     }
   }
+
+  @Test func aRefreshRateFollowLeavesTheResizeInFlightToTheSession() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      let (released, release) = AsyncStream<Void>.makeStream()
+      let resize = Task<Void, Never> { for await _ in released { break } }
+      session.resizing = resize
+
+      mac.host.followDisplayRefresh(session)
+
+      #expect(session.resizing == resize && session.refreshFollow != nil)
+      release.finish()
+      await session.refreshFollow?.value
+    }
+  }
+
+  @Test func endingTheSessionCancelsARefreshRateFollow() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      let (released, release) = AsyncStream<Void>.makeStream()
+      session.refreshFollow = Task<Void, Never> { for await _ in released { break } }
+      mac.host.followDisplayRefresh(session)
+      let follow = try #require(session.refreshFollow)
+
+      await mac.host.end(session)
+
+      #expect(follow.isCancelled)
+      release.finish()
+    }
+  }
+
+  @Test func aNewerRefreshRateFollowCancelsTheOneBefore() async throws {
+    try await Fixture.run { mac in
+      let session = try await viewing(mac)
+      let (released, release) = AsyncStream<Void>.makeStream()
+      session.refreshFollow = Task<Void, Never> { for await _ in released { break } }
+      let first = try #require(session.refreshFollow)
+
+      mac.host.followDisplayRefresh(session)
+
+      #expect(first.isCancelled && session.refreshFollow != first)
+      release.finish()
+      await session.refreshFollow?.value
+    }
+  }
 }
