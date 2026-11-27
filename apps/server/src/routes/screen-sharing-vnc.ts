@@ -42,6 +42,11 @@ export const desktopSetup = (text: string): DesktopSetup => {
   return { kind: "unusable" }
 }
 
+export const recordedDesktopService = (text: string): string | undefined => {
+  const service = jsonObject(text)?.service
+  return typeof service === "string" ? service : undefined
+}
+
 export const outdatedDesktop = async (): Promise<ScreenSharingReply> =>
   vncReply(
     "failed",
@@ -169,6 +174,12 @@ interface VNCSection {
 }
 
 const vncSection = (text: string): VNCSection | undefined => {
+  const vnc = jsonObject(text)?.vnc
+  if (typeof vnc !== "object" || vnc === null) return undefined
+  return vnc
+}
+
+const jsonObject = (text: string): { vnc?: unknown; service?: unknown } | undefined => {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -176,9 +187,7 @@ const vncSection = (text: string): VNCSection | undefined => {
     return undefined
   }
   if (typeof parsed !== "object" || parsed === null) return undefined
-  const vnc = (parsed as { vnc?: unknown }).vnc
-  if (typeof vnc !== "object" || vnc === null) return undefined
-  return vnc
+  return parsed
 }
 
 const highestPort = 65_535

@@ -33,6 +33,7 @@ import { Effect } from "effect"
 
 import { agentProviderFactories } from "./agent-providers.js"
 import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
+import { desktopEnvironment } from "./desktop/desktop-environment.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
@@ -62,16 +63,14 @@ import {
   canReadFolder,
   simulatorsProvider,
   startMachineNetwork,
-  systemNativeMcpManager
-} from "./serve-boot.js"
-import {
+  systemNativeMcpManager,
   SERVER_PROCESS_TITLE,
   stabilizeServerWorkingDirectory,
   failureMessage,
   initializeOptionalServerFeature,
   writeDataUpgradeStatus,
   parseProcessId,
-  monitorAppOwner,
+  monitorOwnerIfAppOwned,
   bundledVersion,
   bundledBuildMetadata,
   resolveServeModes,
@@ -94,14 +93,6 @@ export {
   stabilizeServerWorkingDirectory
 } from "./serve-boot.js"
 export type { BootScopedDataUpgradeProgress } from "./serve-boot.js"
-
-const monitorOwnerIfAppOwned = (
-  ownerPid: number | undefined,
-  lease: ServerLease
-): (() => void) | undefined => {
-  if (ownerPid === undefined) return undefined
-  return monitorAppOwner({ ownerPid, lease })
-}
 
 export const runServe = (
   args: Record<string, string>,
@@ -238,7 +229,12 @@ export const runServe = (
             })
           })
     startup.checkpoint("restoringTerminals")
-    const terminal = makeTerminalManager()
+    const { desktopResumed, ...sharing } = screenSharingProvider(dirname(databasePath))
+    const withDesktop = desktopEnvironment({ dataDir: dirname(databasePath) })
+    const terminal = makeTerminalManager({
+      launchEnvironment: withDesktop,
+      restoreAfter: desktopResumed
+    })
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
@@ -275,7 +271,8 @@ export const runServe = (
         directoryEnv.clear()
         return shellEnv.refresh()
       },
-      resolveDirectoryEnv: directoryEnv.current
+      resolveDirectoryEnv: directoryEnv.current,
+      launchEnvironment: (env) => desktopResumed.then(() => withDesktop(env))
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined
@@ -352,6 +349,7 @@ export const runServe = (
         machine,
         remoteInvoker: machineLink.invoke,
         serverKind: resolvedKind,
+        launchEnvironment: withDesktop,
         oauthVault: credentialVault,
         accounts: pluginPlatform.accountSource,
         ...pluginPlatform.mcpOAuth,
@@ -424,7 +422,7 @@ export const runServe = (
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machineStats: makeMachineStatsSampler(),
         machines: machineLink,
-        ...makeRemoteWorkServices(dirname(databasePath), machineLink, {
+        ...makeRemoteWorkServices(dirname(databasePath), machineLink, withDesktop, {
           id: serverId,
           name: () => machine.name
         }),
@@ -473,7 +471,7 @@ export const runServe = (
           }, 250)
         },
         sessionActivity,
-        ...screenSharingProvider(dirname(databasePath)),
+        ...sharing,
         simulators: simulatorsProvider(dirname(databasePath)),
         updater
       }),

@@ -6,6 +6,38 @@ import { describe, expect, it } from "vitest"
 import { makeTerminalManager } from "./index.js"
 import { run, makeSpawner } from "./test-support.js"
 
+const terminal = (sessionId: string) => ({ sessionId, cwd: "/tmp", cols: 80, rows: 24 })
+
+const USER_ID = 501
+const savedProgram = {
+  argv: ["claude", "--resume"],
+  cwd: "/tmp",
+  cwdFromReport: true,
+  uid: USER_ID
+}
+const onLinux = { env: { SHELL: "/bin/sh" }, platform: "linux", userId: USER_ID } as const
+
+const restoredWhileWaiting = async () => {
+  const before = makeTerminalManager({ ...onLinux, spawner: makeSpawner() })
+  await run(before.createTerminal(terminal("kept")))
+  await run(before.createTerminal(terminal("closed-while-waiting")))
+  const terminals = before
+    .snapshotTerminals()
+    .terminals.map((entry) => ({ ...entry, resume: savedProgram }))
+  const desktop = Promise.withResolvers<void>()
+  const spawner = makeSpawner()
+  const display: { now?: string } = {}
+  const manager = makeTerminalManager({
+    ...onLinux,
+    spawner,
+    launchEnvironment: (env) =>
+      display.now === undefined ? env : { ...env, DISPLAY: display.now },
+    restoreAfter: desktop.promise
+  })
+  manager.restoreTerminals({ version: 4, terminals })
+  return { manager, spawner, desktop, display }
+}
+
 describe("@codevisor/terminal terminal manager shell resolution", () => {
   it("launches macOS shells with the bundled Ghostty terminal environment", async () => {
     const spawner = makeSpawner()
@@ -45,6 +77,48 @@ describe("@codevisor/terminal terminal manager shell resolution", () => {
     expect(readFileSync(join(terminfoDirectory!, "g", "ghostty"))).toEqual(
       readFileSync(join(terminfoDirectory!, "67", "ghostty"))
     )
+  })
+
+  it("applies the launch environment to each terminal as it starts, after its overrides", async () => {
+    const spawner = makeSpawner()
+    let display = ":1"
+    const manager = makeTerminalManager({
+      env: { SHELL: "/bin/sh" },
+      platform: "linux",
+      spawner,
+      launchEnvironment: (env) => (env.DISPLAY === undefined ? { ...env, DISPLAY: display } : env)
+    })
+
+    await run(manager.createTerminal(terminal("first")))
+    display = ":4"
+    await run(manager.createTerminal(terminal("after-the-desktop-moved")))
+    await run(manager.createTerminal(terminal("with-its-own-display"), { DISPLAY: ":9" }))
+
+    expect(spawner.requests.map((request) => request.env.DISPLAY)).toEqual([":1", ":4", ":9"])
+  })
+
+  it("starts restored terminals once what they wait for is there, with the environment as it is then", async () => {
+    const waiting = await restoredWhileWaiting()
+    await run(waiting.manager.closeTerminalForSession("closed-while-waiting"))
+    expect(waiting.spawner.requests).toEqual([])
+
+    waiting.display.now = ":1"
+    waiting.desktop.resolve()
+    await waiting.desktop.promise
+
+    expect(
+      waiting.spawner.requests.map((request) => [request.sessionId, request.env.DISPLAY])
+    ).toEqual([["kept", ":1"]])
+  })
+
+  it("keeps a restored terminal's saved program in snapshots while it waits to start", async () => {
+    const waiting = await restoredWhileWaiting()
+
+    const kept = waiting.manager
+      .snapshotTerminals()
+      .terminals.find((entry) => entry.sessionId === "kept")
+
+    expect(kept?.resume).toEqual(savedProgram)
   })
 
   it("uses the portable 256-color terminal name for Linux profiles", async () => {

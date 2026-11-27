@@ -6,6 +6,7 @@ import { type PrivateSocket, privateSocket } from "../routes/private-socket.js"
 import {
   type DesktopSetup,
   desktopSetup,
+  recordedDesktopService,
   SCREEN_SHARING_CONFIG_FILE
 } from "../routes/screen-sharing-vnc.js"
 import { HttpFailure } from "../server-context.js"
@@ -17,9 +18,9 @@ import {
   displayIsOursOrFree,
   freeDisplay,
   keepOwnFoldersPrivate,
-  ownXServerOn,
-  readyMarkOf
+  ownXServerOn
 } from "./desktop-layout.js"
+import { desktopIsUp, whyDesktopIsDown } from "./desktop-liveness.js"
 import { installPlan, missingPrograms, osRelease, runAsRoot, sudoKind } from "./desktop-packages.js"
 import {
   type DesktopService,
@@ -56,6 +57,8 @@ export interface DesktopManagerOptions {
   readonly locate?: (configured: string) => PrivateSocket
 }
 
+type Resumed = "coming-up" | "not-coming"
+
 interface Shared {
   readonly state: DesktopState
   readonly display?: number
@@ -65,6 +68,7 @@ interface Shared {
 const startPollMs = 250
 const startPolls = 120
 const steadyPolls = 10
+const comingUpPolls = 60
 const installing = "Installing packages"
 const anotherServers =
   "Another Codevisor server on this account already runs a desktop (codevisor-desktop.service). Remove that desktop first."
@@ -112,15 +116,8 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return text === undefined ? { kind: "absent" } : desktopSetup(text)
   }
 
-  const recordedService = (): string | undefined => {
-    try {
-      const config: unknown = JSON.parse(system.readText(configPath) ?? "")
-      const isRecorded = typeof config === "object" && config !== null && "service" in config
-      return isRecorded && typeof config.service === "string" ? config.service : undefined
-    } catch {
-      return undefined
-    }
-  }
+  const recordedService = (): string | undefined =>
+    recordedDesktopService(system.readText(configPath) ?? "")
 
   const shared = (): Shared => {
     const setup = setUp()
@@ -134,18 +131,13 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return { state: "stopped", ...display, problem: socket.detail }
   }
 
-  const sessionIsUp = (socket: string): boolean => {
-    const runner = Number(system.readText(readyMarkOf(socket))?.trim() ?? "")
-    return Number.isInteger(runner) && runner > 0 && system.processAlive(runner)
-  }
-
   const whyOursIsDown = (runs: DesktopService): string | undefined => {
     const setup = setUp()
     if (setup.kind !== "ready" || recordedService() === undefined) return undefined
     if (runs.kind === "process" && recordedService() === "process" && !runs.isSetUp())
       return "the desktop's process isn't running"
 
-    return sessionIsUp(setup.config.socket) ? undefined : "the desktop's session isn't up"
+    return whyDesktopIsDown(system, { dataDir, socket: setup.config.socket }, locate)
   }
 
   const sharedBy = (runs: DesktopService, other: DesktopService): Shared => {
@@ -305,7 +297,7 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
   const staysUp = async (layout: DesktopLayout): Promise<boolean> => {
     let steady = 0
     for (let poll = 0; poll < startPolls && steady < steadyPolls; poll += 1) {
-      const isUp = locate(layout.socket).problem === undefined && sessionIsUp(layout.socket)
+      const isUp = desktopIsUp(system, { dataDir, socket: layout.socket }, locate)
       steady = isUp ? steady + 1 : 0
       await system.sleep(startPollMs)
     }
@@ -382,13 +374,34 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     return status()
   }
 
-  const resume = async (): Promise<void> => {
+  const resume = async (): Promise<Resumed> => {
     const { current: runs, other } = await services()
     await runs.refresh()
     const recorded = recordedService()
-    if (recorded === undefined || setUp().kind !== "ready") return
-    if (runs.isSetUp() || other.isSetUp() || runs.belongsToAnother()) return
-    if (recorded === "process" || runs.kind === "systemd-user") await startUnder(runs, other)
+    if (recorded === undefined || setUp().kind !== "ready") return "not-coming"
+    if (runs.belongsToAnother()) return "not-coming"
+    if (runs.isSetUp()) return "coming-up"
+    if (other.isSetUp()) return other.kind === "process" ? "coming-up" : "not-coming"
+    if (recorded !== "process" && runs.kind !== "systemd-user") return "not-coming"
+
+    await startUnder(runs, other)
+    return "coming-up"
+  }
+
+  const resumeAndWait = async (): Promise<void> => {
+    if ((await oneAtATime(resume)) === "coming-up") await waitUntilUp()
+  }
+
+  const isStillComingUp = (): boolean => {
+    const setup = setUp()
+    if (setup.kind !== "ready" || recordedService() === undefined) return false
+
+    return !desktopIsUp(system, { dataDir, socket: setup.config.socket }, locate)
+  }
+
+  const waitUntilUp = async (): Promise<void> => {
+    for (let poll = 0; poll < comingUpPolls && isStillComingUp(); poll += 1)
+      await system.sleep(startPollMs)
   }
 
   return {
@@ -397,6 +410,6 @@ export const makeDesktopManager = (options: DesktopManagerOptions): DesktopManag
     replaceOld: () => unlessBusy(replaceOld),
     start: (asked = {}) => unlessBusy(() => start(asked)),
     remove: (asked = {}) => unlessBusy(() => remove(asked)),
-    resume: () => oneAtATime(resume)
+    resume: resumeAndWait
   }
 }

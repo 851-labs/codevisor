@@ -196,6 +196,66 @@ describe("a server that can't see its account's systemd by itself", () => {
   })
 })
 
+describe("waiting for the desktop when the server starts", () => {
+  it("waits until the desktop it started again is up", async () => {
+    const machine = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: await setUpAsAProcess() },
+      socketAppearsAfterPolls: 3
+    })
+
+    await machine.manager.resume()
+
+    expect(machine.waits.count).toBe(3)
+  })
+
+  it("gives up after fifteen seconds when the desktop never comes up", async () => {
+    const machine = fakeMachine({
+      files: { ...UBUNTU, [CONFIG]: await setUpAsAProcess() },
+      sessionNeverSettles: true
+    })
+
+    await machine.manager.resume()
+
+    expect(machine.waits.count).toBe(60)
+  })
+
+  it.each([
+    ["no desktop", {}],
+    [
+      "a desktop Codevisor didn't set up",
+      { [CONFIG]: '{ "vnc": { "socket": "/tmp/desktop.sock" } }' }
+    ]
+  ])("doesn't wait at all with %s", async (_name, files) => {
+    const machine = fakeMachine({
+      files: { ...UBUNTU, ...files },
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+
+    await machine.manager.resume()
+
+    expect(machine.waits.count).toBe(0)
+  })
+
+  it("doesn't wait for a desktop under a systemd it can't reach, which nothing will start", async () => {
+    const before = fakeMachine({ files: UBUNTU })
+    await before.manager.start()
+    const machine = fakeMachine({
+      ...withoutSystemd,
+      files: {
+        ...UBUNTU,
+        [CONFIG]: before.files.get(CONFIG) ?? "",
+        [UNIT]: before.files.get(UNIT) ?? ""
+      },
+      socketAppearsAfterPolls: Number.POSITIVE_INFINITY
+    })
+
+    await machine.manager.resume()
+
+    expect(machine.spawned).toEqual([])
+    expect(machine.waits.count).toBe(0)
+  })
+})
+
 describe("a desktop set up as a process, on a server that now has systemd", () => {
   it("is started again under systemd when the server starts, and its config says so", async () => {
     const machine = fakeMachine({
@@ -220,6 +280,7 @@ describe("a desktop set up as a process, on a server that now has systemd", () =
     })
 
     await machine.manager.resume()
+    expect(machine.waits.count).toBe(0)
     expect(machine.files.get(UNIT)).toBe(theirUnit)
     expect(userSystemctl(machine.commands)).toEqual([])
     expect(machine.spawned).toEqual([])

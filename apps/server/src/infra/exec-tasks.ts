@@ -57,7 +57,7 @@ export interface OwnedExecTask {
 export interface ExecTasksOptions {
   readonly directory: string
   readonly shell: string
-  readonly env: NodeJS.ProcessEnv
+  readonly env: () => NodeJS.ProcessEnv
   readonly now?: () => Date
 }
 
@@ -136,7 +136,7 @@ const spawnShell = (
 ): ShellChild =>
   spawn(options.shell, ["-lc", command.command], {
     cwd: command.cwd,
-    env: options.env,
+    env: options.env(),
     detached: true,
     stdio: ["ignore", "pipe", "pipe"]
   })

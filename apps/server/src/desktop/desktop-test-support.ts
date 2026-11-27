@@ -28,6 +28,7 @@ export interface FakeMachine {
   readonly madePrivate: string[]
   readonly closedToOthers: string[]
   readonly changes: { count: number }
+  readonly waits: { count: number }
 }
 
 export const DATA_DIR = "/home/codevisor/.codevisor/data"
@@ -81,6 +82,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
   const closedToOthers: string[] = []
   const alive = new Set<number>(options.alive ?? [])
   const changes = { count: 0 }
+  const waits = { count: 0 }
   const programs = new Set(options.programs ?? EVERY_PROGRAM)
   let polls = 0
 
@@ -125,7 +127,13 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
       alive.delete(pid)
       files.delete(`/proc/${pid}/cmdline`)
     },
-    readText: (path) => (path.endsWith(".ready") ? readyMark() : files.get(path)),
+    readText: (path) => {
+      if (path.endsWith(".ready")) return readyMark()
+      if (path === `/proc/${SESSION_RUNNER}/cmdline`)
+        return [RUNNER.program, ...RUNNER.args, ""].join("\0")
+
+      return files.get(path)
+    },
     writeText: (path, text) => void files.set(path, text),
     remove: (path) => void files.delete(path),
     exists: (path) =>
@@ -136,7 +144,9 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     listFolder: (path) => options.folders?.[path] ?? [],
     makePrivateFolder: (path) => void madePrivate.push(path),
     closeToOtherAccounts: (path) => void closedToOthers.push(path),
-    sleep: async () => undefined
+    sleep: async () => {
+      waits.count += 1
+    }
   }
 
   const locate = (configured: string): PrivateSocket => {
@@ -166,6 +176,7 @@ export const fakeMachine = (options: FakeMachineOptions = {}): FakeMachine => {
     terminated,
     madePrivate,
     closedToOthers,
-    changes
+    changes,
+    waits
   }
 }

@@ -30,6 +30,14 @@ const definedEnvironment = (
   return defined
 }
 
+const stdioEnvironment = (
+  core: McpManagerCore,
+  configured: Readonly<Record<string, string>> | undefined
+): Record<string, string> => {
+  const env = { ...process.env, ...configured }
+  return definedEnvironment(core.config.launchEnvironment?.(env) ?? env)
+}
+
 const serverLaunch = (core: McpManagerCore, server: McpServerRecord): CatalogLaunch => {
   if (server.catalogId === undefined || server.command !== CATALOG_STDIO_COMMAND) {
     return storedLaunch(server)
@@ -120,7 +128,7 @@ export const makeConnectUpstream = (
           ? new StdioClientTransport({
               command: launch.command,
               args: [...launch.args],
-              env: definedEnvironment({ ...process.env, ...stored.env }),
+              env: stdioEnvironment(core, stored.env),
               stderr: "pipe"
             })
           : streamableHttpTransport(

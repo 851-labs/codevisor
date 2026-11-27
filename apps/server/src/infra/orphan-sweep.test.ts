@@ -39,7 +39,7 @@ const sweepRig = () => {
   const execTasks = makeExecTasks({
     directory: tempDir("codevisor-exec-"),
     shell: "/bin/sh",
-    env: process.env
+    env: () => process.env
   })
   const remoteExecTasks = makeRemoteExecTasks({
     self: { id: "server-a", name: () => "Server A" },

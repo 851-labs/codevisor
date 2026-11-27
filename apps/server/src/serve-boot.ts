@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
+import { setTimeout as wait } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
@@ -57,17 +58,27 @@ export const screenSharingProvider = (
   readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly desktops: VNCDesktops | undefined
   readonly desktop: DesktopManager | undefined
+  readonly desktopResumed: Promise<void>
 } => {
   const native = nativeScreenSharing(dataDir)
-  if (native !== undefined)
-    return { screenSharing: native, desktops: undefined, desktop: undefined }
+  if (native !== undefined) return { screenSharing: native, ...noLinuxDesktop, desktops: undefined }
 
   const desktops = fileVNCDesktops(dataDir)
-  return { screenSharing: undefined, desktops, desktop: linuxDesktop(dataDir, desktops) }
+  return { screenSharing: undefined, desktops, ...linuxDesktop(dataDir, desktops) }
 }
 
-const linuxDesktop = (dataDir: string, desktops: VNCDesktops): DesktopManager | undefined => {
-  if (process.platform !== "linux") return undefined
+interface ResumedDesktop {
+  readonly desktop: DesktopManager | undefined
+  readonly desktopResumed: Promise<void>
+}
+
+const desktopResumeLimitMs = 15_000
+const unreferenced = { ref: false }
+
+const noLinuxDesktop: ResumedDesktop = { desktop: undefined, desktopResumed: Promise.resolve() }
+
+const linuxDesktop = (dataDir: string, desktops: VNCDesktops): ResumedDesktop => {
+  if (process.platform !== "linux") return noLinuxDesktop
 
   const manager = makeDesktopManager({
     system: systemDesktopSystem(),
@@ -85,8 +96,12 @@ const linuxDesktop = (dataDir: string, desktops: VNCDesktops): DesktopManager | 
     },
     changed: () => desktops.relays?.recheck()
   })
-  void manager.resume().catch(() => undefined)
-  return manager
+  const resumed = manager.resume().catch(() => undefined)
+  const desktopResumed = Promise.race([
+    resumed,
+    wait(desktopResumeLimitMs, undefined, unreferenced)
+  ])
+  return { desktop: manager, desktopResumed }
 }
 export const canReadFolder = async (path: string): Promise<boolean> => {
   try {
@@ -235,6 +250,14 @@ const processIsAlive = (pid: number): boolean => {
   } catch {
     return false
   }
+}
+
+export const monitorOwnerIfAppOwned = (
+  ownerPid: number | undefined,
+  lease: Pick<ServerLease, "release">
+): (() => void) | undefined => {
+  if (ownerPid === undefined) return undefined
+  return monitorAppOwner({ ownerPid, lease })
 }
 
 export const monitorAppOwner = (options: {

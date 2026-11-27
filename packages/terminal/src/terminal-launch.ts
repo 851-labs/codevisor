@@ -1,4 +1,5 @@
 import type { TerminalCreateRequest } from "@codevisor/api"
+import { Effect } from "effect"
 
 import { withoutInheritedResume, withProgramResume } from "./program-resume-shell.js"
 import { BUNDLED_GHOSTTY_RESOURCES_DIRECTORY, withShellIntegration } from "./shell-integration.js"
@@ -10,7 +11,7 @@ import {
   resolveUserId,
   withDefaultLocale
 } from "./shell.js"
-import type { TerminalManagerConfig, TerminalSpawnRequest } from "./types.js"
+import type { TerminalManagerConfig, TerminalSpawner, TerminalSpawnRequest } from "./types.js"
 
 interface LaunchDefaults {
   readonly env: NodeJS.ProcessEnv
@@ -79,6 +80,20 @@ const prepareLaunch = (
     resumeFile
   })
   return { ...request, shell, ...resumable }
+}
+
+export const spawnerWithLaunchEnvironment = (
+  spawner: TerminalSpawner,
+  launchEnvironment: TerminalManagerConfig["launchEnvironment"]
+): TerminalSpawner => {
+  if (launchEnvironment === undefined) return spawner
+
+  return {
+    spawn: (request, handlers) =>
+      Effect.suspend(() =>
+        spawner.spawn({ ...request, env: launchEnvironment(request.env) }, handlers)
+      )
+  }
 }
 
 export const makeTerminalLaunch = (config: TerminalManagerConfig): PrepareSpawn => {

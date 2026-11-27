@@ -65,6 +65,36 @@ When a desktop was set up as a plain process and the server later reaches system
 
 When a desktop is set up or removed, the server publishes `server.features.updated`, and connected apps read the machine's features again, so the Desktop appears or goes at once. Removing a desktop, or anything that makes its socket stop being private, also disconnects viewers that are connected: the server looks at each live relay every few seconds, and right away on a removal, and closes it with the reason.
 
+### Apps opened by agents and terminals
+
+While a desktop that `codevisor desktop setup` set up is up, what the server starts for you gets that desktop's `DISPLAY` and `XAUTHORITY`, so a window it opens (a browser under test, a GUI app run from a terminal) appears in the desktop you are watching:
+
+| Started by the server                                   | Gets the desktop's display |
+| ------------------------------------------------------- | -------------------------- |
+| Agent harnesses, every session of every harness         | Yes                        |
+| Terminals: new, restarted, and restored after a restart | Yes                        |
+| Commands run on the machine for an agent (`exec`)       | Yes                        |
+| stdio MCP servers and plugins                           | Yes                        |
+| Codevisor's own tools: its browser, Computer Use, Git   | No, the server's own       |
+
+All four go through one function, `desktopEnvironment` (`src/desktop/desktop-environment.ts`), which each of them calls when it starts a process. The rules:
+
+1. **An environment that already has a display is left exactly as it is**, cookie included. That is any environment where `DISPLAY` or `WAYLAND_DISPLAY` is set, even to nothing. It covers a server started inside a graphical login or with `DISPLAY` in its unit, and a process whose own configuration sets one (an MCP server's `env`, a terminal's own variables).
+2. **Otherwise `DISPLAY` and `XAUTHORITY` are set together** from `screen-sharing.json`, never one without the other. An `XAUTHORITY` that came without a `DISPLAY` is replaced, because a cookie only works with its own display.
+3. **A display Codevisor put there is not somebody's choice, and it has an owner.** The pair comes with two marks: `CODEVISOR_DESKTOP_DISPLAY`, the display that was set, and `CODEVISOR_DESKTOP_CONFIG`, the `screen-sharing.json` it came from. A server started from a Codevisor terminal inherits all four.
+   - When the config is the server's own, the pair is its to manage: it is replaced when the desktop moved, and taken away when the desktop is down or removed.
+   - When the config is another server's (a dev server with its own data folder, started in a Codevisor terminal), the pair is left exactly as it is, unless this server has a desktop of its own that is up, which then replaces it.
+   - Change `DISPLAY` in such an environment and rule 1 applies again.
+4. **Whatever runs later still wins.** A shell profile that exports `DISPLAY` overrides it in that terminal, like any other variable.
+
+Nothing is set when there is no desktop, when the desktop is not up, when the config has no `service` key (a desktop Codevisor didn't set up, which includes the dev container's own script), when the config is an older one that names a port, or on macOS. A display that isn't there would make an app that can run without one, a headless browser say, fail instead.
+
+"Up" is one check (`src/desktop/desktop-liveness.ts`), the same one `codevisor desktop status` reports: the socket is there and private, and the session's mark, `<socket>.ready`, names a process that is alive and is this server's desktop runner (`codevisor desktop run --data-dir <its data folder>`). A mark left behind by a runner that was killed, whose process id something else has since been given, doesn't count, and neither does the runner of another server on the same account.
+
+The config is read each time a process is started, never kept. A desktop that is set up, moves to another display number or is removed while the server runs is followed by the next agent session, terminal, command or MCP server that starts. What is already running keeps the environment it started with: open a new terminal or start a new session to pick up a desktop that was set up, or came back, afterwards. That holds for a harness that serves several sessions from one process, too: OpenCode sessions already running keep the display their server started with, and a session started after the display changed gets a server of its own (an OpenCode server stops a minute after its last session ends).
+
+**When the server starts**, it starts two things by itself, and the desktop may still be coming up, started again by the server or by systemd after a reboot: the terminals it restores, and the agent turns it continues after a restart or an update. Both wait for the desktop. Restored terminals are back at once with their saved screens, but their shells start only when the desktop is up, with the environment as it is then; a harness started in that time waits the same way. The wait ends after 15 seconds at the latest, counted from the server's start. The server doesn't wait for a desktop that nothing is going to start: none set up, one that belongs to another server, or one under a systemd it can't reach.
+
 Not done yet: removing the packages again (`remove` leaves them installed).
 
 ### What the server shares
@@ -106,4 +136,4 @@ The folder rule is strict on purpose, and it bites where each account has its ow
 
 A socket file left behind by a VNC server that was killed still passes the check, so the viewer is offered the desktop and its connection then closes.
 
-The dev container's desktop (`scripts/dev-container-desktop.sh`) is set up this way: Xvnc listens on a socket in the container's runtime folder with no TCP port, and X11 itself needs the cookie. The script writes the config last. If it stops anywhere before that, for any reason (the cookie can't be written, Xvnc or D-Bus doesn't start, `ss` shows the desktop's TCP port open on any address in either of two checks a second apart, `ss` can't answer, the config can't be written), an exit trap stops Xvnc and D-Bus and removes the socket, the cookie and the config.
+The dev container's desktop (`scripts/dev-container-desktop.sh`) is set up this way: Xvnc listens on a socket in the container's runtime folder with no TCP port, and X11 itself needs the cookie. The script writes the config last. If it stops anywhere before that, for any reason (the cookie can't be written, Xvnc or D-Bus doesn't start, `ss` shows the desktop's TCP port open on any address in either of two checks a second apart, `ss` can't answer, the config can't be written), an exit trap stops Xvnc and D-Bus and removes the socket, the cookie and the config. Its config has no `service` key, so the rule above adds nothing for it; agents and terminals in the dev container reach that desktop because the entry script puts `DISPLAY` and `XAUTHORITY` into the server's own environment.
