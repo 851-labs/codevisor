@@ -28,40 +28,38 @@ extension SessionModelTests {
     fixture.model.shutdown()
   }
 
-  @Test("Sends wait as long as the machine is away, and every one that waited over 10 minutes is held for Try Again")
-  func staleSendsAreHeld() async {
+  @Test(
+    "A send that can't reach its machine for 30 seconds is Not Delivered while still waiting, and Try Again sends it again"
+  )
+  func unreachableSendIsNotDelivered() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
     fixture.readiness.state = .waiting
-    let first = UserMessage(text: "first")
-    let second = UserMessage(text: "second")
+    let message = UserMessage(text: "still there?")
 
-    fixture.queue.enqueue(first, attachmentIDs: [], route: .bot(afterSequence: 1))
-    fixture.queue.enqueue(second, attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(StaleSend.limit, count: 2)
-    let readsBefore = fixture.readiness.reads.value
-    fixture.clock.advance(by: StaleSend.limit)
-    await fixture.readiness.reads.wait(for: readsBefore + 2)
+    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
+    await fixture.clock.waitForSleep(UnreachableSend.limit)
+    fixture.clock.advance(by: UnreachableSend.limit)
+
+    await settleUntil { fixture.shownDeliveries == [.failed(reason: UnreachableSend.reason)] }
     fixture.readiness.state = .ready
-
-    let stale = TranscriptDelivery.failed(reason: StaleSend.reason)
-    await settleUntil { fixture.shownDeliveries == [stale, stale] }
+    await fixture.readiness.reads.wait(for: fixture.readiness.reads.value + 1)
     #expect(fixture.client.promptedTexts.isEmpty)
 
-    fixture.queue.retry(first.id)
+    fixture.queue.retry(message.id)
     await fixture.client.promptRequests.wait()
-    #expect(fixture.client.promptedMessageIds == [first.id.uuidString.lowercased()])
+    #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
     fixture.model.shutdown()
   }
 
-  @Test("A send whose machine comes back within 10 minutes goes out normally")
-  func sendBeforeTheLimitGoesOut() async {
+  @Test("A send whose machine comes back within 30 seconds goes out normally")
+  func sendWithinTheLimitGoesOut() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
     fixture.readiness.state = .waiting
     let message = UserMessage(text: "back yet?")
 
     fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
-    await fixture.clock.waitForSleep(StaleSend.limit)
-    fixture.clock.advance(by: StaleSend.limit - .seconds(1))
+    await fixture.clock.waitForSleep(UnreachableSend.limit)
+    fixture.clock.advance(by: UnreachableSend.limit - .seconds(1))
     fixture.readiness.state = .ready
 
     await fixture.client.promptRequests.wait()

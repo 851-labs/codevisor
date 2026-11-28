@@ -46,7 +46,7 @@ extension CloudHubConnection {
       let tunnelConfig = CloudTunnelConfig(relays: welcome.relays ?? [], enabled: welcome.tunnel == "on")
       lastTunnelConfig = tunnelConfig
       tunnelConfigHandler?(tunnelConfig)
-      isWelcomed = true
+      setWelcomed(true)
       let waiters = readyWaiters.values
       readyWaiters.removeAll()
       for waiter in waiters {

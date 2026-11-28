@@ -30,13 +30,17 @@ final class CloudHubLink {
   func shutDown() async {
     guard let hub else { return }
     self.hub = nil
+    await hub.setWelcomeHandler(nil)
     await hub.shutdown()
   }
 
   func shutDownInBackground() {
     guard let hub else { return }
     self.hub = nil
-    Task { await hub.shutdown() }
+    Task {
+      await hub.setWelcomeHandler(nil)
+      await hub.shutdown()
+    }
   }
 
   private static func connect(_ hub: CloudHubConnection, for account: CloudAccountController) {
@@ -44,6 +48,7 @@ final class CloudHubLink {
       guard let account else { return }
       await hub.setMachinesChangedHandler(presenceHandler(for: account))
       await hub.setTunnelConfigHandler(tunnelConfigHandler(for: account))
+      await hub.setWelcomeHandler(welcomeHandler(for: account))
       await hub.connect()
     }
   }
@@ -55,6 +60,16 @@ final class CloudHubLink {
       guard let account else { return }
       Task { @MainActor in
         account.reconcilePresence(with: transportMachines)
+      }
+    }
+  }
+
+  private static func welcomeHandler(
+    for account: CloudAccountController
+  ) -> @Sendable (Bool) -> Void {
+    { [weak account] isWelcomed in
+      Task { @MainActor in
+        account?.hubWelcomeChanged(isWelcomed)
       }
     }
   }

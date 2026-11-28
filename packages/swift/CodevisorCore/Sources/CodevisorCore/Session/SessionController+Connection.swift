@@ -79,6 +79,7 @@ extension SessionController {
         guard let self else { throw CancellationError() }
         self.model = try await self.connect(harnessId: harnessId)
       },
+      waitForServer: { [weak self] in await self?.waitUntilServerReady() },
       onEvent: { [weak self] in self?.handleConnectionEvent($0) })
     await connectionAttempt.waitForCompletion()
   }
@@ -103,7 +104,7 @@ extension SessionController {
     case .starting(let harnessName):
       status = .connecting("Starting \(harnessName)…")
     case .waitingForServer:
-      serverWaitMessage = "Waiting for the server..."
+      holdInitialHistoryLoadingForServer()
     case .connected:
       status = .idle
     case .cancelled:
@@ -111,16 +112,23 @@ extension SessionController {
     case .failed(let message):
       if hasExistingAgentSession {
         didFinishExistingRuntimeConfiguration = true
-        existingConfigurationError = message
         updateConfigurationValidationState()
-        if let sessionId = serverSession?.id {
-          finishInitialHistoryLoading(sessionId: sessionId, outcome: "failed")
-        }
       }
       status = .failed(message)
     case .settled:
-      serverWaitMessage = nil
+      if let sessionId = serverSession?.id {
+        finishInitialHistoryLoading(sessionId: sessionId, outcome: "settled")
+      }
     }
+  }
+
+  private func holdInitialHistoryLoadingForServer() {
+    guard hasExistingAgentSession, cachedTranscriptModel == nil, settledConversation.isEmpty else { return }
+    isLoadingInitialHistory = true
+  }
+
+  func waitUntilServerReady() async {
+    _ = await ObservedState.first { isServerReady ? true : nil }
   }
 
   public func selectHarness(_ id: String) async {

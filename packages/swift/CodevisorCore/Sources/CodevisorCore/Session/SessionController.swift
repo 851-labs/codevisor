@@ -106,11 +106,6 @@ final public class SessionController {
       if status != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
-  public internal(set) var serverWaitMessage: String? {
-    didSet {
-      if serverWaitMessage != oldValue { transcriptProjectionRevision &+= 1 }
-    }
-  }
   public internal(set) var sandboxWakeFailure: String?
   public internal(set) var isReconnectingAfterWake = false
   public internal(set) var pendingSendStartedAt: Date?

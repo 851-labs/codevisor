@@ -125,7 +125,6 @@ struct TranscriptBotEventRowTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
-      serverWaitMessage: nil,
       sessionErrorMessage: nil,
       status: .idle,
       botConversation: conversation

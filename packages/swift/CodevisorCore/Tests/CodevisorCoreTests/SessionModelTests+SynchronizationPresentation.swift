@@ -20,19 +20,17 @@ extension SessionModelTests {
     let cached = model.conversation
 
     await model.reconcileIfInFlight()
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.conversation == cached)
     #expect(model.isSending == isGenerating)
     let requests = client.transcriptPageRequests.count
     await model.reconcileIfStalled()
     #expect(client.transcriptPageRequests.count == requests)
     await model.reconcileIfInFlight()
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.conversation == cached)
   }
 
-  @Test("Resumed traffic clears disconnection without claiming checkpoint completion")
-  func resumedTrafficClearsRecovery() async {
+  @Test("A dropped stream shows nothing in the transcript while it reconnects")
+  func droppedStreamStaysQuiet() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     let clock = ManualSessionConnectionRecoveryScheduler()
@@ -40,47 +38,15 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString, connectionRecoveryScheduler: clock.scheduler)
     defer { model.shutdown() }
-    model.apply(.synchronization(.reconnecting))
-    await settleUntil { clock.pendingCount == 1 }
-    clock.advance()
-    await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
     let revision = model.transcriptProjectionRevision
+
+    model.apply(.synchronization(.reconnecting))
+    #expect(model.streamSynchronization == .reconnecting)
+    #expect(clock.pendingCount == 0)
+    #expect(model.transcriptProjectionRevision == revision)
 
     model.apply(.synchronization(.catchingUp))
     #expect(model.streamSynchronization == .catchingUp)
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
-    await settleUntil { clock.pendingCount == 1 }
-    clock.advance()
-    await settleUntil { model.connectionRecoveryMessage == nil }
-    #expect(model.transcriptProjectionRevision > revision)
-    model.apply(.synchronization(.caughtUp))
-    #expect(model.connectionRecoveryMessage == nil)
-
-    model.apply(.synchronization(.reconnecting))
-    await settleUntil { clock.pendingCount == 1 }
-    clock.advance()
-    await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
-  }
-
-  @Test("A stream that reconnects within a blip, like the app returning from the background, never says Reconnecting")
-  func briefStreamDropStaysQuiet() async {
-    let sessionId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
-    let clock = ManualSessionConnectionRecoveryScheduler()
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString, connectionRecoveryScheduler: clock.scheduler)
-    defer { model.shutdown() }
-    let revision = model.transcriptProjectionRevision
-
-    model.apply(.synchronization(.reconnecting))
-    await settleUntil { clock.pendingCount == 1 }
-    #expect(clock.requestedIntervals == [.seconds(1)])
-    #expect(model.connectionRecoveryMessage == nil)
-    model.apply(.synchronization(.catchingUp))
-    await settleUntil { clock.pendingCount == 0 }
-
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.transcriptProjectionRevision == revision)
   }
 
@@ -108,7 +74,6 @@ extension SessionModelTests {
     await recovery?.value
     await settleUntil { scheduler.pendingCount == 0 }
     #expect(model.connectionRecovery.task == nil)
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.errorMessage == nil)
     #expect(model.streamSynchronization == .catchingUp)
     #expect(client.transcriptPageRequests.count == requests)

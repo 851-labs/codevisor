@@ -31,8 +31,12 @@ public enum NavigationPresentation {
 
   public struct SyncIndicator: Equatable, Sendable {
     public var isSyncing: Bool
+    public var isOffline = false
 
-    public var label: String? { isSyncing ? "Syncing…" : nil }
+    public var label: String? {
+      if isOffline { return "Offline" }
+      return isSyncing ? "Syncing…" : nil
+    }
   }
 
   public static func launch(
@@ -48,9 +52,12 @@ public enum NavigationPresentation {
     return .loading
   }
 
-  public static func indicator(machines: [Machine], hasVisibleContent: Bool = true) -> SyncIndicator {
+  public static func indicator(
+    machines: [Machine], hasVisibleContent: Bool = true, isDeviceOffline: Bool = false
+  ) -> SyncIndicator {
     SyncIndicator(
       isSyncing: hasVisibleContent
-        && machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp })
+        && machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp },
+      isOffline: isDeviceOffline)
   }
 }

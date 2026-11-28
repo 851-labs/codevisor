@@ -24,6 +24,7 @@ final class SessionConnectionAttempt {
   func start(
     harnessName: String,
     connect: @escaping @MainActor () async throws -> Void,
+    waitForServer: @escaping @MainActor () async -> Void = {},
     onEvent: @escaping @MainActor (Event) -> Void
   ) {
     guard attempt == nil else { return }
@@ -49,6 +50,7 @@ final class SessionConnectionAttempt {
             return
           }
           onEvent(.waitingForServer)
+          await waitForServer()
           try? await sleep(retryDelay)
           retryDelay = min(retryDelay * 2, Self.connectionRetryCeiling)
           guard !Task.isCancelled else {

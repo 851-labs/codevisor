@@ -60,11 +60,18 @@ private struct DelayedNavigationSyncProgressView: View {
 
 struct HomeSyncIndicatorLabel: View {
   let text: String
+  var isOffline = false
 
   var body: some View {
     HStack(spacing: 6) {
-      ProgressView()
-        .controlSize(.mini)
+      if isOffline {
+        Image(systemName: "wifi.slash")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      } else {
+        ProgressView()
+          .controlSize(.mini)
+      }
       Text(text)
         .font(.footnote)
         .foregroundStyle(.secondary)

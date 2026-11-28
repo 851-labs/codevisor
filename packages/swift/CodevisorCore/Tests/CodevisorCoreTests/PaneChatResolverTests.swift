@@ -24,7 +24,7 @@ struct PaneChatResolverTests {
   }
 
   @Test(
-    "A chat pane whose chat hasn't loaded says its machine is offline, and only says the chat is gone once it's back"
+    "A chat pane whose chat hasn't loaded waits for its offline machine, and only says the chat is gone once it's back"
   )
   func offlineMachine() async {
     let machines = await machines(listingChatOn: [])
@@ -32,7 +32,7 @@ struct PaneChatResolverTests {
     machines.markFailed(for: studio.id, message: "Unreachable")
     machines.connection(for: studio.id).status = MachineStatus(isReachable: false, label: "Unreachable")
 
-    #expect(resolver.chat(sessionId, on: studio.id) == .offline(PaneChatMachine(id: studio.id, name: "Mac Studio")))
+    #expect(resolver.chat(sessionId, on: studio.id) == .connecting(PaneChatMachine(id: studio.id, name: "Mac Studio")))
 
     machines.markReady(for: studio.id)
 

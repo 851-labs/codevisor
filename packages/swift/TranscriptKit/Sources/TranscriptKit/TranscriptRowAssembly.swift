@@ -107,14 +107,7 @@ enum TranscriptRowAssembly {
     to rows: inout [TranscriptPresentationRow]
   ) {
     if !input.isLoadingInitialHistory, pendingMessage == nil, input.activityMessage == nil {
-      if let message = input.serverWaitMessage {
-        rows.append(
-          .init(
-            id: .serverWait,
-            content: .serverWait(message),
-            estimatedHeight: 32
-          ))
-      } else if options.includesConnectingRow,
+      if options.includesConnectingRow,
         case let .connecting(message) = input.status
       {
         rows.append(
@@ -219,9 +212,6 @@ enum TranscriptRowAssembly {
     }
     if let name = input.waitingHarnessUpdateName, input.activityMessage == nil {
       rows.append(.init(id: .updateGate, content: .updateGate(name), estimatedHeight: 32))
-    }
-    if (!settled.isEmpty || input.hasActiveItem), let message = input.serverWaitMessage, input.activityMessage == nil {
-      rows.append(.init(id: .serverWait, content: .serverWait(message), estimatedHeight: 32))
     }
   }
 

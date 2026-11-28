@@ -133,7 +133,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case backgroundTask
     case updateGate
     case connecting
-    case serverWait
     case sandboxPower
     case error
     case statusError
@@ -185,7 +184,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .backgroundTask: "special:background"
       case .updateGate: "special:update-gate"
       case .connecting: "special:connecting"
-      case .serverWait: "special:server-wait"
       case .sandboxPower: "special:sandbox-power"
       case .error: "special:error"
       case .statusError: "special:status-error"
@@ -207,7 +205,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
         .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .setupAfter,
-        .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
+        .startingAgent, .backgroundTask, .updateGate, .connecting, .sandboxPower, .error,
         .statusError, .bottomSpacer:
         false
       }
@@ -242,7 +240,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .botMessage, .botTimestamp, .botAuthorName, .delivery, .botTyping, .setupRequest, .interaction, .setup,
         .setupAfter, .startingAgent,
         .backgroundTask,
-        .updateGate, .connecting, .serverWait, .sandboxPower, .error, .statusError, .bottomSpacer:
+        .updateGate, .connecting, .sandboxPower, .error, .statusError, .bottomSpacer:
         nil
       }
     }
@@ -281,7 +279,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case backgroundTask(String)
     case updateGate(String)
     case connecting(String)
-    case serverWait(String)
     case sandboxPower(TranscriptSandboxPower)
     case error(String)
     case bottomSpacer(CGFloat)

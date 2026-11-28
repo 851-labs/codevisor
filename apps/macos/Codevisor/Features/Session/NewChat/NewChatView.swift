@@ -146,7 +146,6 @@ struct NewChatView: View {
                   }
                 }
               }
-              statusLabel(controller)
             }
             .frame(maxWidth: 720)
           }
@@ -259,19 +258,6 @@ struct NewChatView: View {
   private var title: some View {
     Text("What should we build?")
       .font(.emptyStateTitle)
-  }
-
-  @ViewBuilder
-  private func statusLabel(_ controller: SessionController) -> some View {
-    if controller.isServerReady, let waitMessage = controller.serverWaitMessage {
-      HStack {
-        ShimmeringText(text: waitMessage)
-        Spacer(minLength: 0)
-      }
-      .padding(10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
-    }
   }
 
   private func setupFailureBanner(_ message: String) -> some View {

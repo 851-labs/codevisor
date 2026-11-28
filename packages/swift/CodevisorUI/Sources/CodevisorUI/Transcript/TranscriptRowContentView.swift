@@ -179,9 +179,6 @@ public struct TranscriptRowContentView: View {
     case let .connecting(message):
       ChatActivityRow(message)
         .suppressedDuringStreamingTextEntrance()
-    case let .serverWait(message):
-      ChatActivityRow(message)
-        .suppressedDuringStreamingTextEntrance()
     case let .sandboxPower(.paused(wakeFailure)):
       SandboxPausedNotice(wakeFailure: wakeFailure, wake: { Task { await controller.wakeSandbox() } })
     case .sandboxPower(.waking):
@@ -210,7 +207,7 @@ public struct TranscriptActiveItemRow: View {
   public var body: some View {
     let revision = controller.activeItemRevision
     let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
-    let connectionRecoveryMessage = controller.transcriptActivityOverride
+    let activityOverride = controller.transcriptActivityOverride
     let goal = controller.model?.goal
     let goalActivity = goal?.status == .active ? goal?.activity : nil
     let item = TranscriptActiveItemResolver.resolve(
@@ -229,7 +226,7 @@ public struct TranscriptActiveItemRow: View {
     .onChange(of: waitingOnBackgroundTask) { _, _ in
       invalidateRowMeasurement?()
     }
-    .onChange(of: connectionRecoveryMessage) { _, _ in
+    .onChange(of: activityOverride) { _, _ in
       invalidateRowMeasurement?()
     }
     .onChange(of: goalActivity) { _, _ in

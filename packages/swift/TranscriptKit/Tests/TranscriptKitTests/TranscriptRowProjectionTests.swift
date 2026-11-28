@@ -367,7 +367,6 @@ struct TranscriptRowProjectionTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: isLoadingInitialHistory,
-      serverWaitMessage: nil,
       sessionErrorMessage: sessionError,
       status: status
     )
@@ -427,7 +426,7 @@ extension TranscriptRowProjectionTests {
     let input = TranscriptProjectionInput(
       settledConversation: [cached], pendingUserMessage: nil, activeItem: nil,
       setupPhases: [], waitingBackgroundTaskDescription: "build", waitingHarnessUpdateName: "Codex",
-      isLoadingInitialHistory: false, serverWaitMessage: "Waiting for server…",
+      isLoadingInitialHistory: false,
       sessionErrorMessage: nil, status: .connecting("Connecting…"), activityMessage: "Reconnecting…")
     for includesConnecting in [true, false] {
       let rows = try TranscriptRowProjectionCache.project(
@@ -444,7 +443,7 @@ extension TranscriptRowProjectionTests {
       let input = TranscriptProjectionInput(
         settledConversation: settled, pendingUserMessage: nil, activeItem: nil,
         setupPhases: [], waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil,
-        isLoadingInitialHistory: false, serverWaitMessage: nil,
+        isLoadingInitialHistory: false,
         sessionErrorMessage: nil, status: .idle, sandboxPower: .paused(wakeFailure: nil))
 
       let rows = try TranscriptRowProjectionCache.project(input, options: .init(includesConnectingRow: true))

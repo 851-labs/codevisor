@@ -25,34 +25,25 @@ struct MachineReachabilityRecoveryTests {
     return controller
   }
 
-  @Test("A chat whose machine fails just says it's reconnecting, through retries, and clears once it's back")
-  func chatReportsAnUnreachableMachine() async {
+  @Test("A chat whose machine goes away says nothing, and the machine reads as quiet rather than failed")
+  func chatStaysQuietForAnAwayMachine() async {
     let clock = ManualSessionConnectionRecoveryScheduler()
     let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
     let studio = accountMachine("studio", name: "Mac Studio")
-    signIn(machines, machines: [studio])
-    machines.markReady(for: studio.id)
+    let provider = signIn(machines, machines: [studio])
+    provider.cloudMachines = [makeCloudMachine(deviceId: "studio", name: "Mac Studio", online: false)]
     let controller = chat(on: machines, machineId: studio.id)
-    #expect(controller.connectionRecoveryMessage == nil)
 
     machines.markFailed(for: studio.id, message: "Offline")
-    #expect(controller.connectionRecoveryMessage == nil)
     await awaitObserved { clock.pendingCount == 1 }
     clock.advance()
-    await awaitObserved { controller.connectionRecoveryMessage == "Reconnecting…" }
+    await awaitObserved { machines.showsReconnectNotice(for: studio.id) }
 
-    machines.beginWaiting(for: studio.id, reason: .connecting)
-    machines.markFailed(for: studio.id, message: "Offline")
-    #expect(controller.connectionRecoveryMessage == "Reconnecting…")
-
-    machines.markReady(for: studio.id)
-    #expect(controller.connectionRecoveryMessage == "Reconnecting…")
-    await awaitObserved { clock.pendingCount == 1 }
-    clock.advance()
-    await awaitObserved { controller.connectionRecoveryMessage == nil }
+    #expect(controller.transcriptActivityOverride == nil)
+    #expect(machines.reach(for: studio.id) == .quiet)
   }
 
-  @Test("A message waiting on its machine shows the progress bar once its chat says Reconnecting")
+  @Test("A message waiting on its machine shows the progress bar, and nothing else, once the machine is away")
   func pendingMessageShowsProgressWhileReconnecting() async throws {
     let clock = ManualSessionConnectionRecoveryScheduler()
     let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
@@ -77,7 +68,7 @@ struct MachineReachabilityRecoveryTests {
     clock.advance()
 
     await awaitObserved { controller.transcriptProjectionInput.deliveries[message.id] == .sending }
-    #expect(controller.connectionRecoveryMessage == "Reconnecting…")
+    #expect(controller.transcriptActivityOverride == nil)
   }
 
   @Test("A new turn waiting on its machine shows only the message and its progress, and starts working once sent")
@@ -102,7 +93,7 @@ struct MachineReachabilityRecoveryTests {
     machines.markFailed(for: studio.id, message: "Offline")
     await awaitObserved { clock.pendingCount == 1 }
     clock.advance()
-    await awaitObserved { controller.connectionRecoveryMessage == "Reconnecting…" }
+    await awaitObserved { machines.showsReconnectNotice(for: studio.id) }
 
     let message = UserMessage(text: "still there?")
     let send = Task { await model.send(message) }
@@ -124,6 +115,31 @@ struct MachineReachabilityRecoveryTests {
     #expect(turn.turn.startedAt == time.now)
   }
 
+  @Test(
+    "A send that loses its machine gives up at its deadline as Not Delivered, and Try Again sends it once it's back")
+  func disconnectedSendGivesUp() async throws {
+    let (machines, _, _) = makeController(localServer: nil)
+    let studio = accountMachine("studio", name: "Mac Studio")
+    signIn(machines, machines: [studio])
+    let client = FakeSessionServerClient(sessionId: UUID())
+    client.echoOnPrompt = false
+    client.sendAttempts.failuresLeft = 1
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
+    let controller = chat(on: machines, machineId: studio.id, client: client)
+    let model = try #require(controller.model)
+    model.sendGiveUpDelay = .milliseconds(50)
+    let message = UserMessage(text: "still there?")
+
+    await model.send(message)
+
+    #expect(model.transcriptDeliveries[message.id]?.isFailed == true)
+    reconnect.finish()
+    await model.retryUnsentMessage(id: message.id)
+    #expect(client.promptedMessageIds.contains(message.id.uuidString.lowercased()))
+    #expect(model.transcriptDeliveries[message.id]?.isFailed != true)
+  }
+
   @Test("A turn is timed from its send, or from when its machine came back if that was later")
   func turnIsTimedFromTheLaterOfSendAndReconnect() async {
     let (machines, _, _) = makeController(localServer: nil)
@@ -142,25 +158,24 @@ struct MachineReachabilityRecoveryTests {
     #expect(controller.turnStartedAt == .distantFuture)
   }
 
-  @Test("A machine that answers again within a blip never makes its chats say Reconnecting")
+  @Test("A machine that answers again within a blip never counts as away")
   func briefMachineWaitStaysQuiet() async {
     let clock = ManualSessionConnectionRecoveryScheduler()
     let (machines, _, _) = makeController(localServer: nil, connectionScheduler: clock.scheduler)
     let studio = accountMachine("studio", name: "Mac Studio")
     signIn(machines, machines: [studio])
     machines.markReady(for: studio.id)
-    let controller = chat(on: machines, machineId: studio.id)
 
     machines.beginWaiting(for: studio.id, reason: .connecting)
-    #expect(controller.connectionRecoveryMessage == nil)
+    #expect(!machines.showsReconnectNotice(for: studio.id))
     machines.markReady(for: studio.id)
-    #expect(controller.connectionRecoveryMessage == nil)
+    #expect(!machines.showsReconnectNotice(for: studio.id))
 
     machines.beginWaiting(for: studio.id, reason: .connecting)
     await awaitObserved { clock.pendingCount == 1 }
     #expect(clock.requestedIntervals.last == .seconds(1))
     clock.advance()
-    await awaitObserved { controller.connectionRecoveryMessage == "Reconnecting…" }
+    await awaitObserved { machines.showsReconnectNotice(for: studio.id) }
   }
 
   @Test("A failed machine reconnects as soon as its tunnel is back, not at its next scheduled retry")

@@ -228,7 +228,6 @@ struct TranscriptBotRowAssemblyTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
-      serverWaitMessage: nil,
       sessionErrorMessage: nil,
       status: .idle,
       outgoingMessages: [UserMessage(id: steerID, text: "also this")],
@@ -399,7 +398,6 @@ struct TranscriptBotRowAssemblyTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
-      serverWaitMessage: nil,
       sessionErrorMessage: sessionError,
       status: .idle,
       botConversation: conversation

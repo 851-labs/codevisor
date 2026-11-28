@@ -38,12 +38,18 @@ public actor CloudHubConnection {
   public internal(set) var machines: [CloudMachine] = []
   var machinesChangedHandler: (@Sendable ([CloudMachine]) -> Void)?
   var tunnelConfigHandler: (@Sendable (CloudTunnelConfig) -> Void)?
+  var welcomeHandler: (@Sendable (Bool) -> Void)?
   var lastTunnelConfig: CloudTunnelConfig?
 
   public func setMachinesChangedHandler(
     _ handler: (@Sendable ([CloudMachine]) -> Void)?
   ) {
     machinesChangedHandler = handler
+  }
+
+  public func setWelcomeHandler(_ handler: (@Sendable (_ isWelcomed: Bool) -> Void)?) {
+    welcomeHandler = handler
+    handler?(isWelcomed)
   }
 
   public func setTunnelConfigHandler(_ handler: (@Sendable (CloudTunnelConfig) -> Void)?) {
@@ -113,7 +119,7 @@ public actor CloudHubConnection {
     socket?.cancel(with: .goingAway, reason: nil)
     socket = nil
     socketID = nil
-    isWelcomed = false
+    setWelcomed(false)
     failWaiters(with: CloudHubConnectionError.disconnected)
   }
 
@@ -124,7 +130,7 @@ public actor CloudHubConnection {
       return
     }
     Log.cloud.info("Replacing the cloud hub connection")
-    isWelcomed = false
+    setWelcomed(false)
     resetHeartbeat()
     socket.cancel(with: .goingAway, reason: nil)
   }
@@ -206,7 +212,7 @@ public actor CloudHubConnection {
       socket?.cancel(with: .goingAway, reason: nil)
       socket = nil
       socketID = nil
-      isWelcomed = false
+      reportAttemptEnded()
       if Self.fatalCloseCodes.contains(closeCode) {
         becomeFatal(.rejected(closeCode: closeCode))
       }
@@ -214,6 +220,17 @@ public actor CloudHubConnection {
       failures += 1
       try? await sleep(reconnectDelay(failures))
     }
+  }
+
+  private func reportAttemptEnded() {
+    setWelcomed(false)
+    welcomeHandler?(false)
+  }
+
+  func setWelcomed(_ welcomed: Bool) {
+    guard welcomed != isWelcomed else { return }
+    isWelcomed = welcomed
+    welcomeHandler?(welcomed)
   }
 
   private func becomeFatal(_ failure: CloudHubConnectionError) {

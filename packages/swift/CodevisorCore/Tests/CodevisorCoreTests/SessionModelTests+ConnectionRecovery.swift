@@ -22,7 +22,6 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
       connectionRecoveryScheduler: scheduler.scheduler,
-      connectionRecoveryStatusDelay: .seconds(1),
       connectionRecoveryRetryBaseDelay: .milliseconds(10),
       connectionRecoveryRetryMaximumDelay: .milliseconds(10)
     )
@@ -38,7 +37,6 @@ extension SessionModelTests {
     await model.reconcileIfInFlight()
 
     #expect(model.errorMessage == nil)
-    #expect(model.connectionRecoveryMessage == nil)
     await settleUntil {
       client.eventSinceValues.count + client.sessionEventSinceValues.count
         > subscriptionsBeforeRecovery
@@ -54,14 +52,12 @@ extension SessionModelTests {
     await model.connectionRecovery.task?.value
     #expect(client.transcriptPageRequests.count == 2)
     #expect(model.errorMessage == nil)
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.consumerTask != nil)
     model.apply(.synchronization(.caughtUp))
-    #expect(model.connectionRecoveryMessage == nil)
   }
 
-  @Test("Connection recovery says it is reconnecting after its threshold, and keeps retrying without ever giving up")
-  func connectionRecoveryPresentationThresholds() async {
+  @Test("Connection recovery keeps retrying quietly without ever giving up, and recovers once the server answers")
+  func connectionRecoveryRetriesQuietly() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     let scheduler = ManualSessionConnectionRecoveryScheduler()
@@ -76,7 +72,6 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
       connectionRecoveryScheduler: scheduler.scheduler,
-      connectionRecoveryStatusDelay: .milliseconds(20),
       connectionRecoveryRetryBaseDelay: .milliseconds(200),
       connectionRecoveryRetryMaximumDelay: .milliseconds(200)
     )
@@ -86,19 +81,12 @@ extension SessionModelTests {
 
     await model.reconcileFromServer()
 
-    #expect(model.connectionRecoveryMessage == nil)
-    #expect(model.errorMessage == nil)
-    await settleUntil { scheduler.pendingCount == 1 }
-    #expect(scheduler.requestedIntervals == [.milliseconds(20)])
-    scheduler.advance()
-    await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
-    for _ in 0..<3 {
+    for _ in 0..<4 {
       await settleUntil { scheduler.pendingCount == 1 }
       scheduler.advance()
     }
     await settleUntil { scheduler.pendingCount == 1 }
     #expect(model.errorMessage == nil)
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
 
     let attempts = client.transcriptPageRequests.count
     client.clearTranscriptPageFailures()
@@ -106,7 +94,6 @@ extension SessionModelTests {
     await model.connectionRecovery.task?.value
     #expect(client.transcriptPageRequests.count > attempts)
     #expect(model.connectionRecovery.task == nil)
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.errorMessage == nil)
     #expect(model.isSending)
   }
@@ -156,9 +143,7 @@ extension SessionModelTests {
       Issue.record("Expected recovered assistant"); return
     }
     #expect(recovered.turn.hasDeferredWorkedDetails)
-    #expect(model.connectionRecoveryMessage == nil)
     model.apply(.synchronization(.caughtUp))
-    #expect(model.connectionRecoveryMessage == nil)
   }
 }
 
@@ -271,7 +256,6 @@ extension SessionModelTests {
     #expect(client.transcriptPageRequests.count == 1)
     #expect(!model.isSending)
     #expect(model.serverEventCursor == 3)
-    #expect(model.connectionRecoveryMessage == nil)
   }
 }
 
@@ -301,7 +285,6 @@ extension SessionModelTests {
     let firstError = model.errorMessage
     #expect(firstError != nil)
     #expect(model.connectionRecovery.task == nil)
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(scheduler.requestedIntervals.isEmpty)
 
     client.failNextTranscriptPages(1, with: CodevisorServerClientError.invalidResponse)
@@ -353,7 +336,6 @@ extension SessionModelTests {
     #expect(model.connectionRecovery.task == nil)
     #expect(client.transcriptPageRequests.count == requests + 1)
     #expect(model.errorMessage == nil)
-    #expect(model.connectionRecoveryMessage == nil)
   }
 
   @Test("Reconciling while a recovery is already running leaves that recovery alone")

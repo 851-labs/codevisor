@@ -17,12 +17,12 @@ extension HomeView {
     }
     if hasRemoteMachines {
       ToolbarItem(placement: .principal) { SidebarModePicker(mode: $sidebarMode) }
-      if syncIndicator.isSyncing {
-        ToolbarItem(placement: settingsPlacement) { syncSpinner }
+      if let label = syncIndicator.label {
+        ToolbarItem(placement: settingsPlacement) { syncStatusIcon(label: label) }
       }
-    } else if syncIndicator.isSyncing {
+    } else if let label = syncIndicator.label {
       ToolbarItem(placement: .principal) {
-        HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")
+        HomeSyncIndicatorLabel(text: label, isOffline: syncIndicator.isOffline)
       }
     }
   }
@@ -37,10 +37,17 @@ extension HomeView {
     }
   }
 
-  private var syncSpinner: some View {
-    ProgressView()
-      .controlSize(.small)
-      .accessibilityLabel(syncIndicator.label ?? "Syncing…")
+  @ViewBuilder
+  private func syncStatusIcon(label: String) -> some View {
+    if syncIndicator.isOffline {
+      Image(systemName: "wifi.slash")
+        .foregroundStyle(.secondary)
+        .accessibilityLabel(label)
+    } else {
+      ProgressView()
+        .controlSize(.small)
+        .accessibilityLabel(label)
+    }
   }
 
   @ToolbarContentBuilder

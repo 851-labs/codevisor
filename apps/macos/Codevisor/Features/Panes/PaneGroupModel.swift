@@ -90,6 +90,14 @@ final class PaneGroupModel: Identifiable {
     }
   }
 
+  func machineId(of descriptor: PaneDescriptorState) -> String {
+    makeContext(descriptor).machine.id
+  }
+
+  var machineId: String? {
+    state.panes.first.map(machineId(of:))
+  }
+
   func canHostBrowserAutomation(sessionId requested: String, machineId: String) -> Bool {
     guard createBrowserTab != nil, let descriptor = state.panes.first,
       makeContext(descriptor).machine.id == machineId

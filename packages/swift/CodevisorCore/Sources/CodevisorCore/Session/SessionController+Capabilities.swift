@@ -81,12 +81,22 @@ extension SessionController {
       existingConfigurationError = nil
       updateConfigurationValidationState()
       logExistingChatPhase("capabilities_ready", harnessId: harnessId, startedAt: startedAt)
+    } catch  where isTaskCancellation(error) {
+      return
+    } catch  where ServerConnectionLoss.isConnectionLoss(error) {
+      logExistingChatPhase("capabilities_waiting", harnessId: harnessId, startedAt: startedAt)
+      await waitUntilServerReady()
+      try? await Task.sleep(for: Self.capabilitiesRetryDelay)
+      guard !Task.isCancelled else { return }
+      await prepareExistingSessionCapabilities()
     } catch {
       existingConfigurationError = serverErrorMessage(error)
       updateConfigurationValidationState()
       logExistingChatPhase("capabilities_failed", harnessId: harnessId, startedAt: startedAt)
     }
   }
+
+  private static let capabilitiesRetryDelay: Duration = .milliseconds(500)
 
   public func retryExistingSessionCapabilities() async {
     didLoadExistingHarnessCapabilities = false

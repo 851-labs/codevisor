@@ -13,6 +13,8 @@ public final class MachineController {
   var sandboxSettingsRevision = 0
   public internal(set) var pluginSubscriptionsRevision = 0
   public private(set) var isDeviceOffline = false
+  private var reachesCloud = true
+  let deviceOfflineNotice: DelayedConnectionNotice
 
   public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
@@ -52,11 +54,16 @@ public final class MachineController {
     updateScheduler: ServerUpdateScheduler = .continuous,
     navigationClock: any Clock<Duration> = ContinuousClock(),
     reconnectNoticeDelay: Duration = .seconds(1),
-    connectionScheduler: SessionConnectionRecoveryScheduler = .continuous
+    deviceOfflineNoticeDelay: Duration = .seconds(5),
+    connectionScheduler: SessionConnectionRecoveryScheduler = .continuous,
+    noticeScheduler: SessionConnectionRecoveryScheduler = .continuous
   ) {
     let requestGate = ServerRequestGate()
-    let connections = MachineConnections(reconnectNoticeDelay: reconnectNoticeDelay, scheduler: connectionScheduler)
+    let connections = MachineConnections(
+      reconnectNoticeDelay: reconnectNoticeDelay, scheduler: connectionScheduler, noticeScheduler: noticeScheduler)
     self.connections = connections
+    self.deviceOfflineNotice = DelayedConnectionNotice(
+      delay: deviceOfflineNoticeDelay, now: noticeScheduler.now, sleep: noticeScheduler.sleep)
     self.catalog = MachineCatalog(
       includesLocalMachine: localServer != nil || clientFactory != nil, connections: connections)
     self.store = store
@@ -218,6 +225,7 @@ public final class MachineController {
   }
 
   public func handleCloudAccountSignedOut() {
+    updateDeviceOfflineNotice()
     guard selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix) else { return }
     registry.selectedMachineId = CodevisorMachine.local.id
     persist()
@@ -302,10 +310,24 @@ public final class MachineController {
     }
   }
 
+  public var showsDeviceOffline: Bool { deviceOfflineNotice.isVisible }
+
+  public func cloudConnectionChanged(isConnected: Bool) {
+    reachesCloud = isConnected
+    updateDeviceOfflineNotice()
+    if isConnected { verifyConnections() }
+  }
+
+  private func updateDeviceOfflineNotice() {
+    let cloudIsUnreachable = !reachesCloud && cloudProvider?.isCloudSignedIn == true
+    deviceOfflineNotice.update(isActive: isDeviceOffline || cloudIsUnreachable)
+  }
+
   public func deviceNetworkChanged(isOnline: Bool) {
     guard isDeviceOffline == isOnline else { return }
 
     isDeviceOffline = !isOnline
+    updateDeviceOfflineNotice()
     guard isOnline else {
       for machine in allMachines where !machine.isLocal { connectionLost(machineId: machine.id) }
       return

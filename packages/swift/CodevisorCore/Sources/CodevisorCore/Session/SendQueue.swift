@@ -54,7 +54,7 @@ final class SendQueue {
     let queuedAt = Date()
     var stage = Stage.preparing
     var showsProgress = false
-    var isStale = false
+    var attempt = 0
 
     var delivery: TranscriptDelivery? {
       if case let .failed(reason) = stage { return .failed(reason: reason) }
@@ -92,7 +92,7 @@ final class SendQueue {
 
   func enqueue(_ message: UserMessage, attachmentIDs: [UUID], route: Route) {
     entries.append(Entry(message: message, attachmentIDs: attachmentIDs, route: route))
-    markStale(message.id, after: StaleSend.limit)
+    giveUp(on: message.id, attempt: 0)
     startWorker()
   }
 
@@ -111,8 +111,8 @@ final class SendQueue {
     for attachmentID in entries[index].attachmentIDs { attachments.retryAttachment(id: attachmentID) }
     entries[index].stage = .preparing
     entries[index].showsProgress = false
-    entries[index].isStale = false
-    markStale(id, after: StaleSend.limit)
+    entries[index].attempt += 1
+    giveUp(on: id, attempt: entries[index].attempt)
     startWorker()
   }
 
@@ -168,7 +168,7 @@ final class SendQueue {
 
   private func send(_ message: UserMessage) async {
     if let failure = await readinessFailure() { return failPreparing(failure) }
-    if failIfStale(message.id) { return }
+    guard isPreparing(message.id) else { return }
 
     switch await connect(message) {
     case let .ready(model): await send(message.id, through: model)
@@ -177,20 +177,18 @@ final class SendQueue {
     }
   }
 
-  private func failIfStale(_ id: UUID) -> Bool {
-    guard let index = index(of: id), entries[index].isStale else { return false }
-
-    fail(id, StaleSend.reason)
-    return true
+  private func giveUp(on id: UUID, attempt: Int) {
+    Task { [weak self, clock] in
+      guard (try? await clock.sleep(for: UnreachableSend.limit)) != nil else { return }
+      guard let self, self.readiness() == .waiting, self.isPreparing(id),
+        let index = self.index(of: id), self.entries[index].attempt == attempt
+      else { return }
+      self.fail(id, UnreachableSend.reason)
+    }
   }
 
-  private func markStale(_ id: UUID, after limit: Duration) {
-    Task { [weak self, clock] in
-      guard (try? await clock.sleep(for: limit)) != nil else { return }
-      guard let self, self.readiness() == .waiting else { return }
-      guard let index = self.index(of: id), self.entries[index].stage == .preparing else { return }
-      self.entries[index].isStale = true
-    }
+  private func isPreparing(_ id: UUID) -> Bool {
+    index(of: id).map { entries[$0].stage == .preparing } ?? false
   }
 
   private func readinessFailure() async -> String? {

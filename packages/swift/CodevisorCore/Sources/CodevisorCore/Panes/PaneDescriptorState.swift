@@ -14,6 +14,8 @@ public enum PaneKind: String, Codable, Sendable, CaseIterable {
   case transcript
 
   public var isDeviceLocal: Bool { [.newTab, .subagent, .transcript].contains(self) }
+
+  public var needsLiveMachine: Bool { !isDeviceLocal && self != .chat }
 }
 
 public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {

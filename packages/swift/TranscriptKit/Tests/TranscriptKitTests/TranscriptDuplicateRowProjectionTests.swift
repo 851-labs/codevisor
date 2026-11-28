@@ -36,7 +36,6 @@ struct TranscriptDuplicateRowProjectionTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
-      serverWaitMessage: nil,
       sessionErrorMessage: nil,
       status: .idle,
       outgoingMessages: outgoing

@@ -137,6 +137,10 @@ public final class AppEnvironment {
     cloud.onSignedOut = { [weak self] in
       self?.machines.handleCloudAccountSignedOut()
     }
+    cloud.onHubConnectionChanged = { [weak self] isConnected in
+      self?.machines.cloudConnectionChanged(isConnected: isConnected)
+    }
+    machines.cloudConnectionChanged(isConnected: cloud.isHubConnected)
     cloud.directPaths.onPipeUp = { [weak self] deviceId in
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }

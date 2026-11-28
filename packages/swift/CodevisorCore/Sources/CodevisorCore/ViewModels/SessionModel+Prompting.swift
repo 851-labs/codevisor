@@ -152,7 +152,7 @@ extension SessionModel {
 
   public func retrySessionFailure() async {
     await connectionRecovery.cancelAndWait()
-    connectionRecovery.clearPresentation()
+    connectionRecovery.clearSurfacedError()
     errorMessage = nil
     harnessAuthenticationErrorMessage = nil
     await reconcileFromServer()
@@ -193,22 +193,13 @@ extension SessionModel {
     return outcome
   }
 
-  var synchronizationMessage: String? {
-    streamReconnectNotice.isVisible ? "Reconnecting…" : nil
-  }
-
   func applySynchronization(_ state: SessionStreamSynchronization) {
     guard state != .cursor else { return }
     streamSynchronization = state
-    streamReconnectNotice.update(isActive: state == .reconnecting)
     if state == .caughtUp, presentsBotConversation {
       Task { await refreshBotConversation() }
     }
-    if state != .reconnecting {
-      connectionRecovery.clearPresentation()
-    } else {
-      connectionRecoveryMessage = synchronizationMessage
-    }
+    if state != .reconnecting { connectionRecovery.clearSurfacedError() }
   }
 
   public func setMode(_ modeId: String) async {
