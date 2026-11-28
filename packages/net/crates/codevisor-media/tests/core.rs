@@ -645,7 +645,7 @@ fn jitter_without_a_queue_doesnt_pull_the_estimate_down() {
             sim.run_for(INTERVAL);
         }
 
-        assert!(lowest > 25e6, "seed {seed}: {:.1} Mbit/s", lowest / 1e6);
+        assert!(lowest > 26e6, "seed {seed}: {:.1} Mbit/s", lowest / 1e6);
     }
 }
 

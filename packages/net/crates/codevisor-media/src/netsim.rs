@@ -13,6 +13,11 @@ pub struct NetworkConditions {
 }
 
 impl NetworkConditions {
+    pub fn release_tick(&self) -> Option<Duration> {
+        let tick_ms = self.release_tick_ms.filter(|tick_ms| *tick_ms > 0.0)?;
+        Duration::try_from_secs_f64(tick_ms / 1000.0).ok().filter(|tick| !tick.is_zero())
+    }
+
     const NONE: Self = Self {
         id: "N0",
         delay_ms: 0.0,
@@ -164,14 +169,11 @@ impl NetworkModel {
     }
 
     fn released(&self, arrival: Duration) -> Duration {
-        let tick_ms = self.conditions.release_tick_ms.filter(|tick_ms| *tick_ms > 0.0);
-        let tick = tick_ms.and_then(|tick_ms| Duration::try_from_secs_f64(tick_ms / 1000.0).ok());
-        let Some(tick) = tick.filter(|tick| !tick.is_zero())
-        else {
+        let Some(tick) = self.conditions.release_tick() else {
             return arrival;
         };
         let ticks = arrival.as_nanos().div_ceil(tick.as_nanos());
-        Duration::from_nanos((ticks * tick.as_nanos()) as u64)
+        u64::try_from(ticks * tick.as_nanos()).map_or(arrival, Duration::from_nanos)
     }
 
     fn delay(&mut self) -> Duration {
@@ -220,6 +222,16 @@ mod tests {
             [0, 1, 2, 3, 4, 7].into_iter().map(|sent_ms| model.send(1000, Duration::from_millis(sent_ms))).collect();
         let at = |ms| Fate::Delivered(Duration::from_millis(ms));
         assert_eq!(arrivals, vec![at(4), at(4), at(4), at(4), at(8), at(8)]);
+    }
+
+    #[test]
+    fn a_tick_whose_next_multiple_doesnt_fit_leaves_arrivals_as_they_are() {
+        let conditions =
+            NetworkConditions { id: "test", delay_ms: 1.0, release_tick_ms: Some(1e15), ..NetworkConditions::N0 };
+        let mut model = NetworkModel::new(conditions, 1);
+
+        assert_eq!(model.send(1_200, Duration::ZERO), Fate::Delivered(Duration::from_millis(1)));
+        assert_eq!(NetworkConditions { release_tick_ms: Some(f64::INFINITY), ..conditions }.release_tick(), None);
     }
 
     #[test]

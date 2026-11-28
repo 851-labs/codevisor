@@ -36,7 +36,10 @@ no jitter buffer and no queue deeper than one frame.
      seeds, while its resends drop from 19–45 to 4–7. Main's early requests cut the jitter-delayed packets out of
      each frame's first-time bytes, which shortened the frame's spread and raised its rate sample; now they count
      where they arrived. The memory is cleared by the clock, not by the next gap, so it can't outlive those 10 s on
-     a quiet stream. When
+     a quiet stream. Each gap counts at most twice the round trip (or eight packet paces, if longer), so one stall
+     inside a frame, a pacer pause or a scheduling hiccup, can't hold every lost tail's first request back by its
+     length for 10 s; a clump's gap is within that, since the round trip includes the tick's hold. Counting gaps
+     only once they recur didn't work: on N8 most frames fit inside one clump, so a 10 s window held one clump gap. When
      the tail wait passes, the viewer asks only for the packets that should have arrived by then at the frame's own
      pace (from every packet of it that arrived), or at the receiver's recent longest gap before the frame has a
      pace, or just the next packet before any gap is known (at least the next one), and waits again, so a slow link's frame isn't requested whole while it's still

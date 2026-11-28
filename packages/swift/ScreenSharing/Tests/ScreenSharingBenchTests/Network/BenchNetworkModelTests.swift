@@ -55,9 +55,10 @@ struct BenchNetworkModelTests {
     #expect(arrivalsMs == [4, 4, 4, 4, 8, 8])
   }
 
-  @Test func aTickTooSmallToCountInNanosecondsLeavesArrivalsAsTheyAre() {
+  @Test(arguments: [1e-7, 1e15, Double.infinity])
+  func aTickThatCantBeCountedInNanosecondsLeavesArrivalsAsTheyAre(tickMs: Double) {
     var model = BenchNetworkModel(
-      conditions: BenchNetworkConditions(id: "tiny tick", delayMs: 1, releaseTickMs: 1e-7), seed: 1)
+      conditions: BenchNetworkConditions(id: "odd tick", delayMs: 1, releaseTickMs: tickMs), seed: 1)
 
     #expect(model.send(byteCount: 1_000, atNs: 0) == .delivered(atNs: 1_000_000))
   }
