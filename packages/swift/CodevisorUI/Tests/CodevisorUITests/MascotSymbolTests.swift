@@ -16,7 +16,7 @@
 
     private func inkCoverage(_ symbol: CodevisorSymbol, weight: NSFont.Weight) throws -> Int {
       let image = try #require(
-        NSImage(symbolName: symbol.rawValue, bundle: .module, variableValue: 0)?
+        symbol.nsImage(pointSize: 64)?
           .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 64, weight: weight))?
           .cgImage(forProposedRect: nil, context: nil, hints: nil))
       let context = try #require(
