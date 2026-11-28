@@ -8,6 +8,7 @@ use bytes::{Bytes, BytesMut};
 use crate::{
     fec::{self, Layout},
     types::{Event, MAX_CROSSING, ReceivedFrame, Stats, give_up_after},
+    windowed::{Keep, Windowed},
     wire::{self, Feedback, FrameFields, FrameReceipt, Kind, LateOriginals, Nack, PacketHeader, Recovery, RefreshRequest},
 };
 
@@ -15,7 +16,8 @@ const MAX_AHEAD: u32 = 64;
 const OUTCOME_MEMORY: usize = 64;
 const MIN_TAIL_WAIT: Duration = Duration::from_millis(1);
 const TAIL_GAPS: f64 = 1.5;
-const GAP_DECAY: f64 = 63.0 / 64.0;
+const GAP_MEMORY: Duration = Duration::from_secs(10);
+const GAP_CAP_ROUND_TRIPS: u32 = 2;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
 const MAX_REFRESH_SENDS: u32 = 50;
 const BUSY_WAITS: u32 = 4;
@@ -218,7 +220,7 @@ pub struct Receiver {
     rtt: Duration,
     min_rtt: Option<Duration>,
     streams: BTreeMap<u8, StreamRx>,
-    gap_peak: Duration,
+    gaps: Windowed<Duration>,
     pace: Duration,
     last_media_rx: Option<Instant>,
     outbox: VecDeque<Bytes>,
@@ -232,7 +234,7 @@ impl Receiver {
             rtt: Duration::ZERO,
             min_rtt: None,
             streams: BTreeMap::new(),
-            gap_peak: Duration::ZERO,
+            gaps: Windowed::new(GAP_MEMORY, Keep::Largest),
             pace: Duration::ZERO,
             last_media_rx: None,
             outbox: VecDeque::new(),
@@ -263,8 +265,19 @@ impl Receiver {
         self.rtt + RETRY_MARGIN
     }
 
+    fn gap_cap(&self) -> Duration {
+        if self.rtt.is_zero() {
+            return Duration::MAX;
+        }
+        self.rtt.max(self.pace * BACK_TO_BACK) * GAP_CAP_ROUND_TRIPS
+    }
+
+    fn gap_peak(&self) -> Duration {
+        self.gaps.best().unwrap_or_default()
+    }
+
     fn tail_wait(&self) -> Duration {
-        tail_wait(self.gap_peak, self.give_up_after())
+        tail_wait(self.gap_peak(), self.give_up_after())
     }
 
     pub fn on_packet(
@@ -277,7 +290,9 @@ impl Receiver {
     ) {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
+        self.gaps.expire(now);
         let give_up = self.give_up_after();
+        let gap_cap = self.gap_cap();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
             self.last_media_rx = Some(now);
@@ -367,7 +382,7 @@ impl Receiver {
             assembly.originals += 1;
             if let Some(last) = assembly.last_original_rx {
                 let gap = now.saturating_duration_since(last);
-                self.gap_peak = self.gap_peak.max(gap);
+                self.gaps.push(now, gap.min(gap_cap));
                 self.pace = (self.pace * (PACE_GAIN - 1) + gap) / PACE_GAIN;
             }
             assembly.last_original_rx = Some(now);
@@ -384,7 +399,7 @@ impl Receiver {
         let gap_seen = assembly.highest_index.is_some_and(|highest| header.index > highest + 1)
             || assembly.highest_index.is_none() && header.index > 0;
         assembly.highest_index = Some(assembly.highest_index.map_or(header.index, |highest| highest.max(header.index)));
-        assembly.tail_at = Some(now + tail_wait(self.gap_peak, give_up));
+        assembly.tail_at = Some(now + tail_wait(self.gaps.best().unwrap_or_default(), give_up));
 
         if try_complete(assembly, now, stats) {
             self.on_resolved(&[(header.stream, header.frame)], events, stats);
@@ -443,7 +458,9 @@ impl Receiver {
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.send_refresh_requests(now, stats);
+        self.gaps.expire(now);
         let tail_wait = self.tail_wait();
+        let gap_peak = self.gap_peak();
         let give_up = self.give_up_after();
         let link_busy_until = self.link_busy_until();
         let wait = Wait { give_up, rtt: self.rtt, pace: self.pace };
@@ -460,7 +477,7 @@ impl Receiver {
                     continue;
                 }
                 if assembly.tail_at.is_some_and(|at| now >= at) && !assembly.end_seen {
-                    match assembly.arrived_by(now, self.gap_peak) {
+                    match assembly.arrived_by(now, gap_peak) {
                         Some(limit) => {
                             assembly.tail_limit = Some(limit);
                             assembly.tail_at = Some(now + tail_wait);
@@ -550,7 +567,6 @@ impl Receiver {
             State::Assembling => unreachable!("only resolved frames get here"),
         };
         stream.outcomes.insert(number, outcome);
-        self.gap_peak = self.gap_peak.mul_f64(GAP_DECAY);
         outcome
     }
 
@@ -730,5 +746,58 @@ fn deliver(stream: u8, frame: u32, assembly: Assembly, events: &mut VecDeque<Eve
             None
         }
         State::Assembling => unreachable!("only resolved frames are delivered"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MS: Duration = Duration::from_millis(1);
+    const PACKETS: u16 = 10;
+    const SHARD: usize = 1_100;
+
+    fn deliver(receiver: &mut Receiver, frame: u32, arrivals: &[(u16, Instant)]) {
+        let (mut events, mut stats) = (VecDeque::new(), Stats::default());
+        for &(index, at) in arrivals {
+            let header = PacketHeader {
+                kind: Kind::Data,
+                stream: 0,
+                frame,
+                index,
+                data_count: PACKETS,
+                parity_count: 0,
+                frame_len: (usize::from(PACKETS) * SHARD) as u32,
+            };
+            receiver.on_packet(at, header, Bytes::from(vec![0u8; SHARD]), &mut events, &mut stats);
+        }
+    }
+
+    fn arrivals(start: Instant, gap_after: u16, gap: Duration) -> Vec<(u16, Instant)> {
+        (0..PACKETS).map(|index| (index, start + u32::from(index) * MS / 10 + if index > gap_after { gap } else { Duration::ZERO })).collect()
+    }
+
+    #[test]
+    fn one_stall_inside_a_frame_doesnt_hold_the_tail_wait_far_beyond_the_round_trip() {
+        let start = Instant::now();
+        let mut receiver = Receiver::new(Duration::from_micros(16_667), start);
+        receiver.set_rtt(2 * MS);
+
+        deliver(&mut receiver, 0, &arrivals(start, 4, 30 * MS));
+
+        assert!(receiver.tail_wait() <= 6 * MS, "the tail wait is {:?}", receiver.tail_wait());
+    }
+
+    #[test]
+    fn gaps_between_clumps_within_the_round_trip_still_set_the_tail_wait() {
+        let start = Instant::now();
+        let mut receiver = Receiver::new(Duration::from_micros(16_667), start);
+        receiver.set_rtt(6 * MS);
+
+        for frame in 0..3 {
+            deliver(&mut receiver, frame, &arrivals(start + u32::from(frame as u16) * 100 * MS, 4, 4 * MS));
+        }
+
+        assert_eq!(receiver.tail_wait(), (4 * MS + MS / 10).mul_f64(TAIL_GAPS));
     }
 }

@@ -11,7 +11,12 @@ public struct BenchNetworkConditions: Sendable, Equatable {
   public static let n6 = BenchNetworkConditions(
     id: "N6", delayMs: 25, delayStandardDeviationMs: 5, lossPercent: 0.1, linkCapacityKbps: 50_000)
   public static let n7 = BenchNetworkConditions(id: "N7", delayMs: 50, lossPercent: 5, linkCapacityKbps: 1_000)
+  public static let n8 = BenchNetworkConditions(
+    id: "N8", delayMs: 1, lossPercent: 1, linkCapacityKbps: 1_000_000, releaseTickMs: 4)
+  public static let n9 = BenchNetworkConditions(
+    id: "N9", delayMs: 1, lossPercent: 1, linkCapacityKbps: 1_000_000, releaseTickMs: 10)
   public static let matrix: [BenchNetworkConditions] = [.n0, .n1, .n2, .n3, .n4, .n5, .n6, .n7]
+  public static let all: [BenchNetworkConditions] = matrix + [.n8, .n9]
 
   public var id: String
   public var delayMs: Double
@@ -20,10 +25,12 @@ public struct BenchNetworkConditions: Sendable, Equatable {
   public var averageBurstLossLength: Int?
   public var linkCapacityKbps: Int?
   public var queueLengthPackets: Int?
+  public var releaseTickMs: Double?
 
   public init(
     id: String, delayMs: Double = 0, delayStandardDeviationMs: Double = 0, lossPercent: Double = 0,
-    averageBurstLossLength: Int? = nil, linkCapacityKbps: Int? = nil, queueLengthPackets: Int? = nil
+    averageBurstLossLength: Int? = nil, linkCapacityKbps: Int? = nil, queueLengthPackets: Int? = nil,
+    releaseTickMs: Double? = nil
   ) {
     self.id = id
     self.delayMs = delayMs
@@ -32,5 +39,6 @@ public struct BenchNetworkConditions: Sendable, Equatable {
     self.averageBurstLossLength = averageBurstLossLength
     self.linkCapacityKbps = linkCapacityKbps
     self.queueLengthPackets = queueLengthPackets
+    self.releaseTickMs = releaseTickMs
   }
 }

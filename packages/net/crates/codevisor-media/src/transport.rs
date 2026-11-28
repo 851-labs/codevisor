@@ -185,7 +185,9 @@ impl<T: DatagramTransport> DatagramTransport for ImpairedTransport<T> {
     }
 
     fn rtt(&self) -> Option<Duration> {
-        let delay = Duration::from_secs_f64(self.model.lock().unwrap().0.conditions.delay_ms / 1000.0);
+        let conditions = self.model.lock().unwrap().0.conditions;
+        let held = conditions.release_tick().unwrap_or_default() / 2;
+        let delay = Duration::from_secs_f64(conditions.delay_ms / 1000.0) + held;
         Some(self.inner.rtt().unwrap_or_default() + delay * 2)
     }
 }

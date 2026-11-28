@@ -41,6 +41,28 @@ struct BenchNetworkModelTests {
     #expect(afterDrain == .delivered(atNs: 31 * serializationNs + 10_000_000))
   }
 
+  @Test func aReleaseTickHoldsPacketsUntilTheNextTickAndLetsThemOutTogether() {
+    var model = BenchNetworkModel(
+      conditions: BenchNetworkConditions(id: "clumping", delayMs: 1, releaseTickMs: 4), seed: 1)
+
+    let arrivalsMs = [0, 1, 2, 3, 4, 7].map { sentMs -> Int64? in
+      guard case .delivered(let atNs) = model.send(byteCount: 1_000, atNs: Int64(sentMs) * 1_000_000) else {
+        return nil
+      }
+      return atNs / 1_000_000
+    }
+
+    #expect(arrivalsMs == [4, 4, 4, 4, 8, 8])
+  }
+
+  @Test(arguments: [1e-7, 1e15, Double.infinity])
+  func aTickThatCantBeCountedInNanosecondsLeavesArrivalsAsTheyAre(tickMs: Double) {
+    var model = BenchNetworkModel(
+      conditions: BenchNetworkConditions(id: "odd tick", delayMs: 1, releaseTickMs: tickMs), seed: 1)
+
+    #expect(model.send(byteCount: 1_000, atNs: 0) == .delivered(atNs: 1_000_000))
+  }
+
   @Test func jitterNeverReordersPackets() {
     var model = BenchNetworkModel(
       conditions: BenchNetworkConditions(id: "jittery", delayMs: 5, delayStandardDeviationMs: 20), seed: 3)

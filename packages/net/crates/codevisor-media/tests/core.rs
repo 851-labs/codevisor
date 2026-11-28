@@ -631,20 +631,81 @@ fn a_late_repeat_of_an_older_request_is_ignored() {
 
 #[test]
 fn jitter_without_a_queue_doesnt_pull_the_estimate_down() {
-    let conditions = NetworkConditions { delay_sd_ms: 1.0, ..NetworkConditions::N3 };
-    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), 2);
-    let mut lowest = f64::MAX;
-    for index in 0..1800u64 {
-        let admission = sim.host.admission();
-        if index >= 120 {
-            lowest = lowest.min(admission.estimate_bps);
+    for seed in 1..=5 {
+        let conditions = NetworkConditions { delay_sd_ms: 1.0, ..NetworkConditions::N3 };
+        let mut sim = Sim::new(conditions, config(FecMode::Adaptive), seed);
+        let mut lowest = f64::MAX;
+        for index in 0..1800u64 {
+            let admission = sim.host.admission();
+            if index >= 120 {
+                lowest = lowest.min(admission.estimate_bps);
+            }
+            assert!(admission.admit, "seed {seed}: frame {index} was refused at {:.1} Mbit/s", admission.estimate_bps / 1e6);
+            sim.send(frame(0, &payload(index, 6000)));
+            sim.run_for(INTERVAL);
         }
-        assert!(admission.admit, "frame {index} was refused at {:.1} Mbit/s", admission.estimate_bps / 1e6);
-        sim.send(frame(0, &payload(index, 6000)));
+
+        assert!(lowest > 26e6, "seed {seed}: {:.1} Mbit/s", lowest / 1e6);
+    }
+}
+
+fn scroll_on(conditions: NetworkConditions, seed: u64) -> (Sim, usize) {
+    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), seed);
+    let mut sizes = SplitMix64::new(seed);
+    let mut refused = 0;
+    for index in 0..1800u64 {
+        if sim.host.admission().admit {
+            let small = 2_000 + (sizes.next_u64() % 5_000) as usize;
+            let page_down = if index == 0 { 190_000 } else { 250_000 };
+            let len = if index.is_multiple_of(300) { page_down } else { small };
+            sim.send(frame(0, &payload(index, len)));
+        } else {
+            refused += 1;
+        }
         sim.run_for(INTERVAL);
     }
+    (sim, refused)
+}
 
-    assert!(lowest > 30e6, "{:.1} Mbit/s", lowest / 1e6);
+#[test]
+fn a_gap_older_than_ten_seconds_no_longer_delays_the_request_for_a_lost_tail() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 1);
+    sim.links[0].conditions.release_tick_ms = Some(3.0);
+    sim.send(frame(0, &payload(1, 120_000)));
+    sim.run_for(100 * MS);
+    sim.links[0].conditions.release_tick_ms = None;
+    for index in 0..700u64 {
+        sim.send(frame(0, &payload(index, 300)));
+        sim.run_for(INTERVAL);
+    }
+    sim.drop_when(first_time(|direction, datagram| {
+        direction == Direction::ToViewer
+            && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == 701 && header.index > 0)
+    }));
+    let sent = sim.now;
+    sim.send(frame(0, &payload(9, 3_000)));
+    sim.run_for(100 * MS);
+
+    let asked_after = sim.nacks_to_host.iter().find(|(_, nack)| nack.frame == 701).map(|(at, _)| *at - sent);
+    assert!(asked_after.is_some_and(|after| after < 3 * MS), "the lost tail was asked for after {asked_after:?}");
+}
+
+#[test]
+fn a_link_that_delivers_in_clumps_isnt_asked_for_packets_still_on_their_way() {
+    for conditions in [NetworkConditions::N8, NetworkConditions::N9] {
+        for seed in 1..=3 {
+            let (mut sim, refused) = scroll_on(conditions, seed);
+            let resent = sim.host.stats(sim.now).packets_retransmitted;
+            let early = sim.nacked_before_arriving();
+            let estimate = sim.host.admission().estimate_bps;
+            let case = format!("{} seed {seed}", conditions.id);
+
+            assert!(early <= 3, "{case}: {early} packets were asked for while still on the link");
+            assert!(resent <= 20, "{case}: {resent} packets resent on a link that lost about 100 of 10,000");
+            assert_eq!(refused, 0, "{case}: captures refused on a 1 Gbit/s link");
+            assert!(estimate >= 100e6, "{case}: {:.1} Mbit/s after 30 s", estimate / 1e6);
+        }
+    }
 }
 
 #[test]
@@ -1092,7 +1153,7 @@ fn a_slow_link_doesnt_ask_again_for_packets_still_on_their_way() {
         assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
         let retransmitted = sim.host.stats(sim.now).packets_retransmitted;
         let early = sim.nacked_before_arriving();
-        assert!(early * 20 <= retransmitted as usize, "seed {seed}: {early} of {retransmitted} were still on the link");
+        assert!(early <= 1, "seed {seed}: {early} of {retransmitted} resends were asked for while still on the link");
     }
 }
 

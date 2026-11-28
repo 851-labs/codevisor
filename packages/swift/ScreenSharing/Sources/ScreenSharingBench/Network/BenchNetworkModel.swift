@@ -28,8 +28,20 @@ public struct BenchNetworkModel: Sendable {
     guard let departureNs = link.enqueue(byteCount: byteCount, atNs: sentNs) else { return .queueOverflow }
     guard !isLost else { return .lost }
 
-    lastArrivalNs = max(departureNs + delayNs(), lastArrivalNs)
+    lastArrivalNs = max(releasedNs(departureNs + delayNs()), lastArrivalNs)
     return .delivered(atNs: lastArrivalNs)
+  }
+
+  private func releasedNs(_ arrivalNs: Int64) -> Int64 {
+    guard let tickMs = conditions.releaseTickMs, tickMs > 0 else { return arrivalNs }
+
+    let tickNsValue = (tickMs * 1_000_000).rounded()
+    guard tickNsValue.isFinite, tickNsValue >= 1, tickNsValue < Double(Int64.max) else { return arrivalNs }
+
+    let tickNs = Int64(tickNsValue)
+    let ticks = arrivalNs / tickNs + (arrivalNs % tickNs > 0 ? 1 : 0)
+    let (releasedNs, overflow) = ticks.multipliedReportingOverflow(by: tickNs)
+    return overflow ? arrivalNs : releasedNs
   }
 
   private mutating func delayNs() -> Int64 {

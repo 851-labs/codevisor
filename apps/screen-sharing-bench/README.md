@@ -165,6 +165,12 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   the traffic and are counted in `queue_overflow`; a packet that is both is counted as an overflow, which no N0–N7
   condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
   mapping socket, like a NAT.
+- **Clumping networks (851-4477).** N8 and N9 are N3 (1 ms, 1% loss, 1 Gbit/s) with a release tick of 4 ms and
+  10 ms: a packet leaves the link at the next multiple of the tick after it would have arrived, so packets arrive in
+  clumps with nothing in between, as they do behind a Wi-Fi access point, a virtual switch or a busy receiver. No
+  packet is reordered or lost by the tick. `--networks` takes them by name; the default matrix stays N0–N7, and the
+  nightly `matrix-v2` plan runs them. They keep the weakness the broken relay timer showed by accident in the bench:
+  a viewer that takes the gap between two clumps for a lost tail asks for packets that are still on their way.
 - **Delivery on time (851-4477).** The relay sends each packet when the model says it is due, from one strict
   dispatch timer armed with no leeway (`.nanoseconds(0)`). From the first Tier 1 run (28 October 2026) until 851-4477
   it was armed with `leeway: .never`, which reads like "no leeway" but is an infinite one: macOS 27.2 never fires such
@@ -535,7 +541,7 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
   (C5), then runs `scripts/tier1.sh nightly`: the `core-v2` report (S1–S6 at N0 and N3, 3 interleaved repetitions
   of 30 s with 10 s warm-up, about 20 min) and the `gate-v2` report (exactly the PR gate's run: S2, S3 and S5 at N0
-  and N3, about 10 min) and the `matrix-v2` report (N1, N2 and N4–N7, 1 repetition, about 20 min), all with
+  and N3, about 10 min) and the `matrix-v2` report (N1, N2 and N4–N9, 1 repetition, about 28 min), all with
   `--encoder vt`. Each report records its plan in `run.method.plan`, and a baseline
   only uses nightlies of the same plan: the same cell measured among other scenes differs, for example typing's N3
   p95 is about 35 ms in a core run and about 52 ms in the gate's run. Reports from before plans existed match no

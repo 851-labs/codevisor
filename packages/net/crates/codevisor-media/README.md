@@ -18,10 +18,28 @@ no jitter buffer and no queue deeper than one frame.
   storms. The pacer is a token bucket holding 1 ms of sending,
   because tokio's timers fire at 1 ms resolution.
 - **Loss recovery, cheapest first.**
-  1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
-     packets, at least 1 ms; the longest gap fades by 1/64 per resolved frame, about 0.7 s at 60 frames a second).
-     At 1/16 per frame (851-3822) it forgot N6's 5 ms jitter within 11 frames and NACKed the next delayed packet as
-     lost: in the sim 6% of N6's packets were resent, against 0.9% now, and those NACKs pinned FEC at 13–25%. When
+  1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest gap between a frame's packets in
+     the last 10 s, at least 1 ms). The gap used to fade, by 1/16 per resolved frame (851-3822) and then by 1/64
+     (about 0.7 s at 60 frames a second). At 1/16 it forgot N6's 5 ms jitter within 11 frames and NACKed the next
+     delayed packet as lost: in the sim 6% of N6's packets were resent, against 0.9% at 1/64, and those NACKs pinned
+     FEC at 13–25%. At 1/64 it still forgot a link that delivers in clumps (851-4477): most frames are a few packets
+     inside one clump and show no gap, so by the next large frame, seconds later, the wait was back at 1 ms, the gap
+     to the next clump passed for a lost tail, and the viewer asked for the packets it expected by then, 28 at a
+     time, every millisecond. On N3 with a 4 ms or 10 ms release tick (`netsim`'s N8 and N9) the sim resent 213–457
+     packets in 30 s that were still on their way (2–4 without the tick), the host took the requests for 10–20% loss,
+     and its estimate fell from about 110 Mbit/s to 11 (N8, 2 seeds of 3) or by a tenth at every large frame (N9).
+     With the 10 s memory it resends 5–13 and the estimate's low stays at 104–114 Mbit/s, as on N3 (measured after
+     #1510 and #1515, which don't cover this: a clump holds packets longer than half of N3's 2 ms round trip, so
+     they aren't late originals). The prices: one long stall inside a frame holds the tail wait at up to the
+     give-up time for 10 s, so a lost tail is asked for that much later; and on a jittery link without a queue (N3
+     with 1 ms jitter, 6 KB frames) the estimate's low is about 7% lower, 26–29 Mbit/s against 30–31 on main in 5
+     seeds, while its resends drop from 19–45 to 4–7. Main's early requests cut the jitter-delayed packets out of
+     each frame's first-time bytes, which shortened the frame's spread and raised its rate sample; now they count
+     where they arrived. The memory is cleared by the clock, not by the next gap, so it can't outlive those 10 s on
+     a quiet stream. Each gap counts at most twice the round trip (or eight packet paces, if longer), so one stall
+     inside a frame, a pacer pause or a scheduling hiccup, can't hold every lost tail's first request back by its
+     length for 10 s; a clump's gap is within that, since the round trip includes the tick's hold. Counting gaps
+     only once they recur didn't work: on N8 most frames fit inside one clump, so a 10 s window held one clump gap. When
      the tail wait passes, the viewer asks only for the packets that should have arrived by then at the frame's own
      pace (from every packet of it that arrived), or at the receiver's recent longest gap before the frame has a
      pace, or just the next packet before any gap is known (at least the next one), and waits again, so a slow link's frame isn't requested whole while it's still
@@ -247,7 +265,7 @@ Transports implement `DatagramTransport`:
 - `QuicTransport` is the product path. It keeps at most 256 KiB queued inside QUIC and hands later datagrams back
   as `SendOutcome::Full`, so the backlog stays in the pacer, where admission sees it.
 - `UdpTransport` is the raw-UDP baseline and fallback.
-- `ImpairedTransport` sends through a seeded `netsim::NetworkModel` (the benchmark's N0–N7) for the bench.
+- `ImpairedTransport` sends through a seeded `netsim::NetworkModel` (the benchmark's N0–N9) for the bench.
 
 `Core` is the same transport as a state machine with no I/O and no clock of its own: feed it datagrams and the time,
 and take datagrams, wake-up times and events out. The deterministic tests drive two of them over `netsim`.
