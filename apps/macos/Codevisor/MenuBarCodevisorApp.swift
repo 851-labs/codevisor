@@ -1,7 +1,7 @@
 import CodevisorUI
 import SwiftUI
 
-struct SandboxCodevisorApp: App {
+struct MenuBarCodevisorApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var runtime = AppRuntime.shared
 
@@ -11,10 +11,9 @@ struct SandboxCodevisorApp: App {
       .restorationBehavior(.disabled)
     ClientSettingsScene(runtime: runtime)
     MenuBarExtra {
-      SandboxMenuBarMenu()
+      MenuBarMenu()
     } label: {
-      CodevisorSymbol.codevisorMark.image
-        .accessibilityLabel("Codevisor")
+      MenuBarIcon()
     }
   }
 }

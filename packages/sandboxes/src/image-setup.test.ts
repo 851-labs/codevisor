@@ -65,8 +65,8 @@ describe("macOS image setup script", () => {
     expect(release.trimEnd().endsWith("step 'The macOS image is ready'")).toBe(true)
   })
 
-  it("runs the app as a menu bar sandbox and dismisses the notification banners macOS shows at login", () => {
-    expect(release).toContain('defaults write "$bundle_id" CodevisorRunsAsSandbox -bool true')
+  it("runs the app in the menu bar and dismisses the notification banners macOS shows at login", () => {
+    expect(release).toContain('defaults write "$bundle_id" CodevisorRunsInMenuBar -bool true')
     expect(release).toContain('if name of bannerAction contains "Close" then perform bannerAction')
     expect(release).toMatch(/end repeat' >\/dev\/null 2>&1 <\/dev\/null &\nLAUNCHER\n/)
     expect(release.indexOf("'kTCCServiceAppleEvents'")).toBeLessThan(

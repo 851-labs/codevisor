@@ -153,7 +153,7 @@ const developmentEnvironment = (app: ImageApp): ReadonlyArray<string> => {
 const startAppLines = (): ReadonlyArray<string> => [
   "step 'Starting Codevisor'",
   'defaults write "$bundle_id" CodevisorUsesStandaloneServer -bool true',
-  'defaults write "$bundle_id" CodevisorRunsAsSandbox -bool true',
+  'defaults write "$bundle_id" CodevisorRunsInMenuBar -bool true',
   '"$launcher"',
   `for attempt in $(seq 1 ${bridgeWaitSeconds}); do`,
   '  [ -s "$HOME/.codevisor/data/computer-use-token" ] && ls /tmp/codevisor-cu-"$(id -u)"-*.sock >/dev/null 2>&1 && break',

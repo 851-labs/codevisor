@@ -30,6 +30,6 @@ enum DeviceDataDeletion {
   }
 
   private static var wipe: DeviceDataWipe {
-    DeviceDataWipe(scope: MacDeviceDataScope.current(preservingDefaults: [SandboxMode.defaultsKey]))
+    DeviceDataWipe(scope: MacDeviceDataScope.current(preservingDefaults: MenuBarMode.defaultsKeys))
   }
 }

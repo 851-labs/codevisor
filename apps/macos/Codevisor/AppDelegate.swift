@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSWindow.allowsAutomaticWindowTabbing = false
     CVChromiumView.profilesRoot = CodevisorAppVariant.developmentBrowserProfilesURL?.path
     guard !AppPreview.rendersFixtures else { return }
-    if SandboxMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
+    if MenuBarMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
     let scope = AppInstanceLease.Scope.current()
     do {
       if let lease = try AppInstanceLease.acquireDefault(for: scope) {
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-    !SandboxMode.isEnabled
+    !MenuBarMode.isEnabled
   }
 
   private func instanceStillRunningAfterWaiting(in scope: AppInstanceLease.Scope) -> NSRunningApplication? {
