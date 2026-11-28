@@ -1,13 +1,16 @@
-import CodevisorUI
 import SwiftUI
 
-struct LaunchStartingView: View {
-  let isSlow: Bool
+public struct LaunchStartingView: View {
+  private let isSlow: Bool
   @State private var spinnerDelayPassed = false
 
-  var body: some View {
-    IconAnchoredStack(spacing: 14) {
-      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
+  public init(isSlow: Bool) {
+    self.isSlow = isSlow
+  }
+
+  public var body: some View {
+    CenteredLaunchStack(spacing: 14) {
+      LaunchMark()
       ProgressView()
         .controlSize(.small)
         .opacity(showsSpinner ? 1 : 0)

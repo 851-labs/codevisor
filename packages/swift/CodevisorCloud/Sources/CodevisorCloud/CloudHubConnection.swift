@@ -9,7 +9,8 @@ public actor CloudHubConnection {
   private let serverURL: URL
   private let credentialStore: any CloudCredentialStore
   private let webSocketTransport: any ServerWebSocketTransport
-  let deviceName: String
+  private let chosenDeviceName: String?
+  lazy var deviceName = chosenDeviceName ?? Self.defaultDeviceName
   let deviceOS: String
   let appVersion: String?
   let releaseChannel: CloudReleaseChannel
@@ -60,7 +61,7 @@ public actor CloudHubConnection {
   public init(
     serverURL: URL,
     credentialStore: any CloudCredentialStore,
-    deviceName: String = CloudHubConnection.defaultDeviceName,
+    deviceName: String? = nil,
     deviceOS: String = CloudHubConnection.defaultDeviceOS,
     appVersion: String? = nil,
     releaseChannel: CloudReleaseChannel = .shared,
@@ -77,7 +78,7 @@ public actor CloudHubConnection {
     self.reconnectDelay = reconnectDelay
     self.serverURL = serverURL
     self.credentialStore = credentialStore
-    self.deviceName = deviceName
+    self.chosenDeviceName = deviceName
     self.deviceOS = deviceOS
     self.appVersion = appVersion
     self.releaseChannel = releaseChannel

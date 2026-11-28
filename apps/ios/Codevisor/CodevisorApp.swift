@@ -200,48 +200,10 @@ struct CodevisorApp: App {
 }
 
 private struct CodevisorStartupSplashView: View {
-  @State private var showsSpinner = false
-
-  private var title: String {
-    guard CodevisorAppVariant.isDevelopment,
-      CodevisorAppVariant.developmentInstanceID != nil
-    else { return "Codevisor" }
-    return "Codevisor (\(CodevisorAppVariant.developmentWorktreeName))"
-  }
-
   var body: some View {
-    ZStack {
-      Color(.systemBackground)
-        .ignoresSafeArea()
-
-      VStack(spacing: 18) {
-        CodevisorAppIconView(size: 112)
-
-        Text(title)
-          .font(.title2.weight(.semibold))
-
-        ZStack {
-          if showsSpinner {
-            ProgressView()
-              .controlSize(.regular)
-              .tint(.secondary)
-              .transition(.opacity)
-          }
-        }
-        .frame(height: 24)
-        .accessibilityHidden(!showsSpinner)
-      }
-      .task {
-        do {
-          try await Task.sleep(for: .milliseconds(500))
-        } catch {
-          return
-        }
-        withAnimation(.easeInOut(duration: 0.15)) {
-          showsSpinner = true
-        }
-      }
-    }
+    LaunchStartingView(isSlow: false)
+      .ignoresSafeArea()
+      .background(Color(.systemBackground))
   }
 }
 
@@ -250,14 +212,12 @@ private struct ClientDataStartupFailureView: View {
   let retry: () -> Void
 
   var body: some View {
-    ContentUnavailableView {
-      Label("Codevisor Couldn't Open Its Data", systemImage: "externaldrive.badge.exclamationmark")
-    } description: {
-      Text("The app stopped before loading or syncing so your existing data remains intact.\n\n\(message)")
-    } actions: {
+    let failure = LaunchFailure(stage: .localData, message: message)
+    LaunchMessageView(title: failure.title, message: failure.message) {
       Button("Try Again", action: retry)
         .buttonStyle(.borderedProminent)
+        .controlSize(.large)
     }
-    .padding(24)
+    .ignoresSafeArea()
   }
 }
