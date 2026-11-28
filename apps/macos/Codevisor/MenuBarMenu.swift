@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct SandboxMenuBarMenu: View {
+struct MenuBarMenu: View {
   @Environment(\.openWindow) private var openWindow
   @Environment(\.openSettings) private var openSettings
 

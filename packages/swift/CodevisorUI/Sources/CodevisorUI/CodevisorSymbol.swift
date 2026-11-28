@@ -36,6 +36,11 @@ public enum CodevisorSymbol: String, Sendable {
   }
 
   #if os(macOS)
+    public func nsImage(pointSize: CGFloat) -> NSImage? {
+      NSImage(symbolName: rawValue, bundle: .module, variableValue: 0)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular))
+    }
+
     public static func harnessImage(_ harnessId: String?) -> NSImage? {
       symbolName("harness", harnessId).flatMap { NSImage(symbolName: $0, bundle: .module, variableValue: 0) }
     }

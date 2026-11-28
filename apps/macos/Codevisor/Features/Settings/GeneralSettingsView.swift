@@ -35,6 +35,7 @@ struct GeneralSettingsView: View {
 
   private var generalSection: some View {
     Section {
+      MenuBarModeRow()
       Toggle("Ask before quitting", isOn: confirmBeforeQuitting)
         .toggleStyle(.switch)
       Toggle("Ask before closing a working chat", isOn: confirmBeforeClosingWorkingChat)

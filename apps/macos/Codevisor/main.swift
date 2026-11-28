@@ -13,14 +13,14 @@ CVPrepareChromiumApplication()
 #if DEBUG
   if AppStoreScreenshotData.isEnabled {
     AppStoreScreenshotApp.main()
-  } else if SandboxMode.isEnabled {
-    SandboxCodevisorApp.main()
+  } else if MenuBarMode.isEnabled {
+    MenuBarCodevisorApp.main()
   } else {
     CodevisorApp.main()
   }
 #else
-  if SandboxMode.isEnabled {
-    SandboxCodevisorApp.main()
+  if MenuBarMode.isEnabled {
+    MenuBarCodevisorApp.main()
   } else {
     CodevisorApp.main()
   }

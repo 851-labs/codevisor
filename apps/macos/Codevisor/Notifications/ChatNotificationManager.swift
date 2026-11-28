@@ -129,7 +129,7 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
   }
 
   func deliver(_ event: ChatAttentionEvent) {
-    guard !SandboxMode.isEnabled, let settings = settingsModel?.settings, settings.notificationsEnabled else { return }
+    guard !MenuBarMode.isEnabled, let settings = settingsModel?.settings, settings.notificationsEnabled else { return }
     clearNotifications(for: event.sessionId)
 
     if NSApp.isActive {
