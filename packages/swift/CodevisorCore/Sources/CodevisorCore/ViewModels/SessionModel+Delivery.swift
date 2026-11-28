@@ -110,7 +110,7 @@ extension SessionModel {
   }
 
   private func reportUndelivered(_ error: any Error) {
-    guard !(error is CancellationError) else { return }
+    guard !(error is CancellationError), !(error is UnreachableSend.Error) else { return }
     let detail = serverErrorMessage(error)
     let reported = ReportedError(
       title: "Message wasn't delivered",
@@ -126,14 +126,30 @@ extension SessionModel {
   ) async -> SendOutcome {
     let notice = startSendingNotice(for: message.id)
     defer { notice.cancel() }
+    let deadline = ContinuousClock.now.advanced(by: sendGiveUpDelay)
     while true {
       do {
         return .accepted(try await prompt(message, delivery: delivery, actionID: actionID))
       } catch {
         guard ServerConnectionLoss.isConnectionLoss(error) else { return .failed(error) }
         if message.id == unacceptedTurnPromptID { turnPromptWaitedForConnection = true }
-        guard await transport.waitUntilConnected() else { return .failed(error) }
+        switch await waitUntilConnected(before: deadline) {
+        case .connected: continue
+        case .unavailable: return .failed(error)
+        case .timedOut: return .failed(UnreachableSend.Error())
+        }
       }
+    }
+  }
+
+  private func waitUntilConnected(before deadline: ContinuousClock.Instant) async -> ConnectionWait {
+    let transport = transport
+    return await withTaskGroup(of: ConnectionWait.self) { group in
+      group.addTask { await transport.waitUntilConnected() ? .connected : .unavailable }
+      group.addTask { (try? await Task.sleep(until: deadline)) == nil ? .unavailable : .timedOut }
+      let first = await group.next() ?? .unavailable
+      group.cancelAll()
+      return first
     }
   }
 
@@ -197,4 +213,10 @@ extension SessionModel {
         return false
       }
   }
+}
+
+private enum ConnectionWait: Sendable {
+  case connected
+  case unavailable
+  case timedOut
 }

@@ -28,6 +28,45 @@ extension SessionModelTests {
     fixture.model.shutdown()
   }
 
+  @Test(
+    "A send that can't reach its machine for 30 seconds is Not Delivered while still waiting, and Try Again sends it again"
+  )
+  func unreachableSendIsNotDelivered() async {
+    let fixture = await BotSendFixture.make(using: loadedBotModel)
+    fixture.readiness.state = .waiting
+    let message = UserMessage(text: "still there?")
+
+    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
+    await fixture.clock.waitForSleep(UnreachableSend.limit)
+    fixture.clock.advance(by: UnreachableSend.limit)
+
+    await settleUntil { fixture.shownDeliveries == [.failed(reason: UnreachableSend.reason)] }
+    fixture.readiness.state = .ready
+    await fixture.readiness.reads.wait(for: fixture.readiness.reads.value + 1)
+    #expect(fixture.client.promptedTexts.isEmpty)
+
+    fixture.queue.retry(message.id)
+    await fixture.client.promptRequests.wait()
+    #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
+    fixture.model.shutdown()
+  }
+
+  @Test("A send whose machine comes back within 30 seconds goes out normally")
+  func sendWithinTheLimitGoesOut() async {
+    let fixture = await BotSendFixture.make(using: loadedBotModel)
+    fixture.readiness.state = .waiting
+    let message = UserMessage(text: "back yet?")
+
+    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
+    await fixture.clock.waitForSleep(UnreachableSend.limit)
+    fixture.clock.advance(by: UnreachableSend.limit - .seconds(1))
+    fixture.readiness.state = .ready
+
+    await fixture.client.promptRequests.wait()
+    #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
+    fixture.model.shutdown()
+  }
+
   @Test("A bot send that can't start shows the reason, and Try Again sends it once the bot can")
   func botSendRetriesAfterAConnectionFailure() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)

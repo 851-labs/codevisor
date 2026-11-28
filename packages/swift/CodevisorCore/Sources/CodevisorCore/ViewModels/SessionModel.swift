@@ -85,6 +85,7 @@ public final class SessionModel {
     didSet { if turnPromptWaitedForConnection != oldValue { transcriptProjectionRevision &+= 1 } }
   }
   var sendingNoticeDelay: Duration = .seconds(1)
+  var sendGiveUpDelay: Duration = UnreachableSend.limit
   public internal(set) var hasOlderBotMessages = false
   public internal(set) var isLoadingOlderBotMessages = false
   public internal(set) var modelFallback: SessionModelFallback?

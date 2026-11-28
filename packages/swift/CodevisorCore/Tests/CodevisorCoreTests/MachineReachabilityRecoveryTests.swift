@@ -115,6 +115,31 @@ struct MachineReachabilityRecoveryTests {
     #expect(turn.turn.startedAt == time.now)
   }
 
+  @Test(
+    "A send that loses its machine gives up at its deadline as Not Delivered, and Try Again sends it once it's back")
+  func disconnectedSendGivesUp() async throws {
+    let (machines, _, _) = makeController(localServer: nil)
+    let studio = accountMachine("studio", name: "Mac Studio")
+    signIn(machines, machines: [studio])
+    let client = FakeSessionServerClient(sessionId: UUID())
+    client.echoOnPrompt = false
+    client.sendAttempts.failuresLeft = 1
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
+    let controller = chat(on: machines, machineId: studio.id, client: client)
+    let model = try #require(controller.model)
+    model.sendGiveUpDelay = .milliseconds(50)
+    let message = UserMessage(text: "still there?")
+
+    await model.send(message)
+
+    #expect(model.transcriptDeliveries[message.id]?.isFailed == true)
+    reconnect.finish()
+    await model.retryUnsentMessage(id: message.id)
+    #expect(client.promptedMessageIds.contains(message.id.uuidString.lowercased()))
+    #expect(model.transcriptDeliveries[message.id]?.isFailed != true)
+  }
+
   @Test("A turn is timed from its send, or from when its machine came back if that was later")
   func turnIsTimedFromTheLaterOfSendAndReconnect() async {
     let (machines, _, _) = makeController(localServer: nil)
