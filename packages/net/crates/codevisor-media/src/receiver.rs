@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use crate::{
     fec::{self, Layout},
     types::{Event, MAX_CROSSING, ReceivedFrame, Stats, give_up_after},
-    wire::{self, Feedback, FrameFields, FrameReceipt, Kind, Nack, PacketHeader, Recovery, RefreshRequest},
+    wire::{self, Feedback, FrameFields, FrameReceipt, Kind, LateOriginals, Nack, PacketHeader, Recovery, RefreshRequest},
 };
 
 const MAX_AHEAD: u32 = 64;
@@ -31,6 +31,7 @@ struct Assembly {
     received: usize,
     requested: Vec<Option<Instant>>,
     first_requested: Vec<Option<Instant>>,
+    late_originals: Vec<u16>,
     first_rx: Option<Instant>,
     last_original_rx: Option<Instant>,
     original_bytes: usize,
@@ -71,6 +72,7 @@ impl Assembly {
             received: 0,
             requested: Vec::new(),
             first_requested: Vec::new(),
+            late_originals: Vec::new(),
             first_rx: None,
             last_original_rx: None,
             original_bytes: 0,
@@ -214,6 +216,7 @@ pub struct Receiver {
     epoch: Instant,
     frame_interval: Duration,
     rtt: Duration,
+    min_rtt: Option<Duration>,
     streams: BTreeMap<u8, StreamRx>,
     gap_peak: Duration,
     pace: Duration,
@@ -227,6 +230,7 @@ impl Receiver {
             epoch,
             frame_interval,
             rtt: Duration::ZERO,
+            min_rtt: None,
             streams: BTreeMap::new(),
             gap_peak: Duration::ZERO,
             pace: Duration::ZERO,
@@ -237,6 +241,9 @@ impl Receiver {
 
     pub fn set_rtt(&mut self, rtt: Duration) {
         self.rtt = rtt;
+        if !rtt.is_zero() {
+            self.min_rtt = Some(self.min_rtt.map_or(rtt, |min_rtt| min_rtt.min(rtt)));
+        }
     }
 
     pub fn poll_transmit(&mut self) -> Option<Bytes> {
@@ -349,6 +356,10 @@ impl Receiver {
         let retransmission = header.kind == Kind::Data
             && assembly.first_requested[index].is_some_and(|asked| now >= asked + self.rtt / 2);
         assembly.repaired |= retransmission;
+        let resend_could_be_here = |asked: Instant| self.min_rtt.is_none_or(|min_rtt| now >= asked + min_rtt / 2);
+        if header.kind == Kind::Data && assembly.first_requested[index].is_some_and(|asked| !resend_could_be_here(asked)) {
+            assembly.late_originals.push(header.index);
+        }
         if !retransmission {
             if assembly.first_rx.is_some() {
                 assembly.original_bytes += datagram_len;
@@ -530,6 +541,7 @@ impl Receiver {
                 complete_offset_us: completed.map_or(0, |at| micros(at - first)),
                 original_bytes: assembly.original_bytes.min(u32::MAX as usize) as u32,
                 recovery: assembly.recovery(),
+                late_originals: LateOriginals::from_indices(assembly.late_originals.iter().copied()),
             })
         };
         let outcome = match &assembly.state {

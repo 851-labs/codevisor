@@ -17,6 +17,7 @@ struct Sighting {
 pub struct Arrived {
     seen: VecDeque<Sighting>,
     lost: u64,
+    generation: u64,
 }
 
 impl Arrived {
@@ -24,7 +25,7 @@ impl Arrived {
         if known_bps.is_some() && self.reached(at, known_bps).is_some_and(|reached| reached < position) {
             return;
         }
-        *self = Self::default();
+        *self = Self { generation: self.generation + 1, ..Self::default() };
         self.seen.push_back(Sighting { at, position, carried: position });
     }
 
@@ -50,6 +51,21 @@ impl Arrived {
             sighting.carried = sighting.carried.saturating_sub(bytes);
         }
         true
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn give_back(&mut self, generation: u64, position: u64, bytes: u64) {
+        if generation != self.generation {
+            return;
+        }
+        let bytes = bytes.min(self.lost);
+        self.lost -= bytes;
+        for sighting in self.seen.iter_mut().filter(|sighting| sighting.position >= position) {
+            sighting.carried = sighting.carried.saturating_add(bytes);
+        }
     }
 
     pub fn reached(&self, now: Instant, known_bps: Option<f64>) -> Option<u64> {
@@ -90,6 +106,23 @@ mod tests {
     use super::*;
 
     const MS: Duration = Duration::from_millis(1);
+
+    #[test]
+    fn bytes_noted_lost_before_a_restart_arent_given_back_to_the_count_after_it() {
+        let start = Instant::now();
+        let mut arrived = Arrived::default();
+        arrived.restart(start, 0, None);
+        arrived.note(start + 100 * MS, 20_000);
+        assert!(arrived.note_lost(5_000, 1_200));
+        let before = arrived.generation();
+        arrived.restart(start + 5_000 * MS, 30_000, None);
+        arrived.note(start + 5_100 * MS, 40_000);
+        assert!(arrived.note_lost(35_000, 3_000));
+
+        arrived.give_back(before, 5_000, 1_200);
+
+        assert_eq!(arrived.lost(), 3_000);
+    }
 
     #[test]
     fn nothing_seen_or_one_sighting_gives_no_reach() {

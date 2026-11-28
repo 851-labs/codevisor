@@ -69,6 +69,7 @@ struct SentFrame {
     probes: u32,
     unanswered: u32,
     expires: Option<Instant>,
+    charges: Charges,
 }
 
 impl SentFrame {
@@ -114,10 +115,60 @@ impl SendTimes {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Unreported {
     sent: SendTimes,
     resolved: Instant,
+    charges: Charges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Charge {
+    window: u64,
+    lost_at: Instant,
+    position: u64,
+    bytes: usize,
+    arrived_lost: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct Charges {
+    per_index: Vec<Option<Charge>>,
+    fixed: bool,
+    counted: Option<(u64, Instant)>,
+    confirmed: bool,
+    sent_in: u64,
+}
+
+impl Charges {
+    fn standing(&self) -> bool {
+        self.fixed || self.per_index.iter().any(Option::is_some)
+    }
+
+    fn confirm(&mut self, answer: Answer, estimator: &mut Estimator) {
+        if std::mem::replace(&mut self.confirmed, true) {
+            return;
+        }
+        for charge in self.per_index.iter_mut().filter_map(Option::take) {
+            match answer {
+                Answer::Report(at) => estimator.on_lost_earlier(charge.lost_at, charge.bytes, Some(at)),
+                Answer::Due(at) => estimator.on_lost_earlier(at, charge.bytes, None),
+                Answer::GivenUp => estimator.on_lost_earlier(charge.lost_at, charge.bytes, None),
+            }
+            self.fixed = true;
+        }
+    }
+
+    fn unconfirmed(&self) -> bool {
+        !self.confirmed && self.per_index.iter().any(Option::is_some)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Answer {
+    Report(Instant),
+    Due(Instant),
+    GivenUp,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -158,10 +209,32 @@ impl AckDelay {
 
 #[derive(Debug, Default)]
 struct LossWindow {
+    id: u64,
     started: Option<Instant>,
     sent: u64,
     nacked: u64,
+    next_sent: u64,
+    next_nacked: u64,
     rate: f64,
+}
+
+impl LossWindow {
+    fn sending_into(&self, now: Instant) -> u64 {
+        let ended = self.started.is_some_and(|started| now.saturating_duration_since(started) >= LOSS_WINDOW);
+        self.id + u64::from(ended)
+    }
+
+    fn counted_in(&self, sent_in: u64) -> u64 {
+        sent_in.max(self.id)
+    }
+
+    fn nacked_in(&mut self, window: u64) -> Option<&mut u64> {
+        match window.checked_sub(self.id) {
+            Some(0) => Some(&mut self.nacked),
+            Some(1) => Some(&mut self.next_nacked),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -173,6 +246,7 @@ pub struct Sender {
     estimator: Estimator,
     loss: LossWindow,
     last_loss: Option<Instant>,
+    nack_losses: BTreeMap<(u8, u32), Instant>,
     rtt: Duration,
     ack_delay: Option<AckDelay>,
     tail_backoff: u32,
@@ -193,6 +267,7 @@ impl Sender {
             estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps, config.frame_interval),
             loss: LossWindow::default(),
             last_loss: None,
+            nack_losses: BTreeMap::new(),
             rtt: Duration::ZERO,
             ack_delay: None,
             tail_backoff: 0,
@@ -273,7 +348,12 @@ impl Sender {
         }
         stats.frames_sent += 1;
         stats.parity_packets_sent += parity_count as u64;
-        self.loss.sent += layout.data_count as u64;
+        let sent_in = self.loss.sending_into(now);
+        if sent_in == self.loss.id {
+            self.loss.sent += layout.data_count as u64;
+        } else {
+            self.loss.next_sent += layout.data_count as u64;
+        }
         stream.unresolved.insert(
             number,
             SentFrame {
@@ -296,10 +376,12 @@ impl Sender {
                 probes: 0,
                 unanswered: 0,
                 expires: None,
+                charges: Charges { per_index: vec![None; layout.data_count], sent_in, ..Charges::default() },
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
-            let (oldest, dropped) = stream.unresolved.pop_first().expect("over the limit");
+            let (oldest, mut dropped) = stream.unresolved.pop_first().expect("over the limit");
+            dropped.charges.confirm(Answer::GivenUp, &mut self.estimator);
             self.in_flight_bytes -= dropped.bytes_out;
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
@@ -329,8 +411,7 @@ impl Sender {
             FecMode::Fixed(ratio) => ratio.max(0.0),
             FecMode::Adaptive => {
                 let long_round_trip = self.rtt > self.config.frame_interval / 4;
-                let recent_loss = self.last_loss.is_some_and(|at| now.saturating_duration_since(at) < FEC_MEMORY);
-                if long_round_trip || recent_loss {
+                if long_round_trip || self.recent_loss(now) {
                     (MIN_FEC + 2.0 * self.loss.rate).clamp(MIN_FEC, MAX_FEC)
                 } else {
                     0.0
@@ -341,15 +422,85 @@ impl Sender {
 
     fn roll_loss_window(&mut self, now: Instant) {
         let started = *self.loss.started.get_or_insert(now);
-        if now.saturating_duration_since(started) < LOSS_WINDOW {
+        let age = now.saturating_duration_since(started);
+        if age < LOSS_WINDOW {
             return;
         }
+        let answer_due = self.rtt + self.config.frame_interval * IN_FLIGHT_INTERVALS;
+        if age < LOSS_WINDOW * 2 && self.losses_still_to_be_answered(self.loss.id, now, answer_due) {
+            return;
+        }
+        self.confirm_unanswered(now);
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
         if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
             self.estimator.on_heavy_loss(now, current.min(1.0));
         }
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
-        self.loss = LossWindow { started: Some(now), sent: 0, nacked: 0, rate: self.loss.rate };
+        self.loss = LossWindow {
+            id: self.loss.id + 1,
+            started: Some(now),
+            sent: self.loss.next_sent,
+            nacked: self.loss.next_nacked,
+            rate: self.loss.rate,
+            ..LossWindow::default()
+        };
+    }
+
+    fn confirm_unanswered(&mut self, now: Instant) {
+        let unreported_for = self.unreported_for();
+        for stream in self.streams.values_mut() {
+            for unreported in stream.unreported.values_mut().filter(|unreported| now >= unreported.resolved + unreported_for) {
+                unreported.charges.confirm(Answer::Due(unreported.resolved + unreported_for), &mut self.estimator);
+            }
+        }
+    }
+
+    fn unreported_for(&self) -> Duration {
+        self.rtt * 2 + self.config.frame_interval
+    }
+
+    fn recent_loss(&self, now: Instant) -> bool {
+        let recent = |at: &Instant| now.saturating_duration_since(*at) < FEC_MEMORY;
+        self.last_loss.as_ref().is_some_and(recent) || self.nack_losses.values().any(recent)
+    }
+
+    fn take_back_late_originals(&mut self, stream_id: u8, number: u32, late: &wire::LateOriginals) {
+        let Some(stream) = self.streams.get_mut(&stream_id) else {
+            return;
+        };
+        let charges = match stream.unresolved.get_mut(&number) {
+            Some(frame) => &mut frame.charges,
+            None => match stream.unreported.get_mut(&number) {
+                Some(unreported) => &mut unreported.charges,
+                None => return,
+            },
+        };
+        for &(start, count) in late.ranges() {
+            let end = (usize::from(start) + usize::from(count)).min(charges.per_index.len());
+            let slots = charges.per_index.get_mut(usize::from(start).min(end)..end).unwrap_or_default();
+            for charge in slots.iter_mut().filter_map(Option::take) {
+                if let Some(nacked) = self.loss.nacked_in(charge.window) {
+                    *nacked = nacked.saturating_sub(1);
+                }
+                if let Some(generation) = charge.arrived_lost {
+                    self.arrived.give_back(generation, charge.position, charge.bytes as u64);
+                }
+            }
+        }
+        if !charges.standing() {
+            charges.counted = None;
+            self.nack_losses.remove(&(stream_id, number));
+        }
+    }
+
+    fn losses_still_to_be_answered(&self, window: u64, now: Instant, answer_due: Duration) -> bool {
+        let waiting = |charges: &Charges| {
+            charges.counted.is_some_and(|(counted_in, at)| counted_in == window && now < at + answer_due)
+        };
+        self.streams.values().any(|stream| {
+            stream.unresolved.values().any(|frame| waiting(&frame.charges))
+                || stream.unreported.values().any(|unreported| waiting(&unreported.charges))
+        })
     }
 
     fn update_pacing_rate(&mut self, now: Instant) {
@@ -454,6 +605,9 @@ impl Sender {
             if !frame.counted_lost[index] {
                 let bytes = frame.packets[index].len() as u64;
                 frame.counted_lost[index] = self.arrived.note_lost(frame.positions[index], bytes);
+                if let Some(charge) = frame.charges.per_index[index].as_mut() {
+                    charge.arrived_lost = frame.counted_lost[index].then_some(self.arrived.generation());
+                }
             }
         }
         let known_bps = self.estimator.measured().then(|| self.estimator.estimate_bps());
@@ -461,16 +615,27 @@ impl Sender {
         let mut requested = 0;
         let mut first_losses = 0;
         let mut lost_bytes = 0;
+        self.loss.started.get_or_insert(now);
+        let window = self.loss.counted_in(frame.charges.sent_in);
         let mut repeated = 0;
         let mut held = 0;
+        let mut resent_again = false;
         for index in named() {
-            if frame.resends[index] == Resend::Never {
+            let first = frame.resends[index] == Resend::Never;
+            if first {
                 first_losses += 1;
-                lost_bytes += frame.packets[index].len();
+                let bytes = frame.packets[index].len();
+                let position = frame.positions[index];
+                let arrived_lost = frame.counted_lost[index].then_some(self.arrived.generation());
+                let charge = Charge { window, lost_at: now, position, bytes, arrived_lost };
+                frame.charges.per_index[index] = Some(charge);
                 if index + 1 == frame.data_count
                     && let Some(probe) = frame.probe
                 {
                     frame.resends[index] = probe;
+                    frame.charges.per_index[index] = None;
+                    frame.charges.fixed = true;
+                    lost_bytes += bytes;
                 }
             }
             let recent = match frame.resends[index] {
@@ -490,6 +655,10 @@ impl Sender {
             let tag = PacketTag { stream: nack.stream, frame: nack.frame, index: index as u16, original: false };
             self.pacer.push(frame.packets[index].clone(), tag);
             requested += 1;
+            if !first && let Some(charge) = frame.charges.per_index[index].take() {
+                self.estimator.on_lost_earlier(charge.lost_at, charge.bytes, Some(now));
+            }
+            resent_again |= !first;
         }
         stats.retransmissions_skipped += repeated;
         if first_losses > 0 || held > 0 || requested > 0 {
@@ -498,16 +667,32 @@ impl Sender {
             frame.expires = None;
             frame.flight_bytes = self.in_flight_bytes + self.pacer.backlog_bytes();
         }
-        self.loss.nacked += first_losses;
+        if first_losses > 0 {
+            frame.charges.counted = Some((window, now));
+            if let Some(nacked) = self.loss.nacked_in(window) {
+                *nacked += first_losses;
+            }
+        }
+        frame.charges.fixed |= resent_again;
         if first_losses > 0 || requested > 0 {
             self.estimator.on_lost(now, lost_bytes);
-            self.last_loss = Some(now);
+            self.nack_losses.retain(|_, at| now.saturating_duration_since(*at) < FEC_MEMORY);
+            self.nack_losses.insert((nack.stream, nack.frame), now);
             self.update_pacing_rate(now);
         }
         stats.packets_retransmitted += requested;
     }
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        self.confirm_unanswered(now);
+        if let Some(receipt) = feedback.receipt.filter(|receipt| !feedback.lost && !receipt.late_originals.is_empty()) {
+            self.take_back_late_originals(feedback.stream, feedback.frame, &receipt.late_originals);
+        }
+        if let Some(unreported) =
+            self.streams.get_mut(&feedback.stream).and_then(|stream| stream.unreported.get_mut(&feedback.frame))
+        {
+            unreported.charges.confirm(Answer::Report(now), &mut self.estimator);
+        }
         self.note_rtt(now);
         self.ceiling_fec_ratio = self.fec_ratio(now);
         self.estimator.set_admitting(self.admission().admit);
@@ -520,7 +705,8 @@ impl Sender {
             stream.ltr_token = Some(token);
             events.push_back(Event::LtrAcked { stream: feedback.stream, token });
         }
-        if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
+        if let Some(mut frame) = stream.unresolved.remove(&feedback.frame) {
+            frame.charges.confirm(Answer::Report(now), &mut self.estimator);
             self.in_flight_bytes -= frame.bytes_out;
             if feedback.lost {
                 self.last_loss = Some(now);
@@ -535,7 +721,9 @@ impl Sender {
                 events.push_back(Event::FrameAcked(ack));
             }
             if feedback.receipt.is_some_and(|receipt| receipt.recovery == crate::Recovery::Fec) {
-                self.loss.nacked += 1;
+                if let Some(nacked) = self.loss.nacked_in(self.loss.counted_in(frame.charges.sent_in)) {
+                    *nacked += 1;
+                }
                 self.last_loss = Some(now);
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
@@ -562,7 +750,7 @@ impl Sender {
             }
         } else if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost)
             && let Some(unreported) = stream.unreported.remove(&feedback.frame)
-            && now.saturating_duration_since(unreported.resolved) <= self.rtt * 2 + self.config.frame_interval
+            && now.saturating_duration_since(unreported.resolved) <= self.unreported_for()
         {
             self.estimator.on_delivery(now, unreported.sent.delivery(receipt));
         }
@@ -572,10 +760,11 @@ impl Sender {
             if number >= feedback.resolved_below {
                 break;
             }
-            let frame = entry.remove();
+            let mut frame = entry.remove();
             self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
+                frame.charges.confirm(Answer::GivenUp, &mut self.estimator);
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
@@ -587,9 +776,12 @@ impl Sender {
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
                 if let Some(first) = frame.first_tx {
                     let sent = SendTimes { first, latest: frame.latest_tx };
-                    stream.unreported.insert(number, Unreported { sent, resolved: now });
-                    if stream.unreported.len() > MAX_UNREPORTED {
-                        stream.unreported.pop_first();
+                    let charges = std::mem::take(&mut frame.charges);
+                    stream.unreported.insert(number, Unreported { sent, resolved: now, charges });
+                    if stream.unreported.len() > MAX_UNREPORTED
+                        && let Some((_, mut evicted)) = stream.unreported.pop_first()
+                    {
+                        evicted.charges.confirm(Answer::GivenUp, &mut self.estimator);
                     }
                 }
             }
@@ -620,6 +812,7 @@ impl Sender {
     }
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        self.confirm_unanswered(now);
         let waits = self.probe_waits();
         let mut probed = false;
         for (&stream_id, stream) in &mut self.streams {
@@ -654,7 +847,8 @@ impl Sender {
                 probed = true;
             }
             for number in expired {
-                if let Some(frame) = stream.unresolved.remove(&number) {
+                if let Some(mut frame) = stream.unresolved.remove(&number) {
+                    frame.charges.confirm(Answer::GivenUp, &mut self.estimator);
                     self.in_flight_bytes -= frame.bytes_out;
                 }
                 stats.frames_lost += 1;
@@ -690,7 +884,15 @@ impl Sender {
             })
             .filter_map(|(newest, frame)| waits.next_wake(frame, newest))
             .min();
-        [self.pacer.next_send(now), probe].into_iter().flatten().min()
+        let unreported_for = self.unreported_for();
+        let unanswered = self
+            .streams
+            .values()
+            .flat_map(|stream| stream.unreported.values())
+            .filter(|unreported| unreported.charges.unconfirmed())
+            .map(|unreported| unreported.resolved + unreported_for)
+            .min();
+        [self.pacer.next_send(now), probe, unanswered].into_iter().flatten().min()
     }
 
     pub fn admission(&self) -> Admission {
@@ -822,6 +1024,329 @@ mod tests {
             self.now = self.sender.poll_timeout(self.now).expect("a probe is due");
             self.sender.handle_timeout(self.now, &mut self.events, &mut self.stats);
         }
+
+        fn send_another(&mut self, packets: usize) {
+            let data = vec![9u8; packets * 1_100];
+            let frame = OutgoingFrame { data: &data, ..OutgoingFrame::default() };
+            self.sender.send_frame(self.now, frame, 1_200, &mut self.events, &mut self.stats).expect("valid");
+            self.drain();
+        }
+
+        fn reported(&mut self, frame: u32, late: &[u16], resolved_below: u32) {
+            let receipt = wire::FrameReceipt {
+                first_rx_us: 1,
+                last_rx_offset_us: 0,
+                complete_offset_us: 0,
+                original_bytes: 0,
+                recovery: crate::Recovery::Nack,
+                late_originals: wire::LateOriginals::from_indices(late.iter().copied()),
+            };
+            let feedback = Feedback {
+                stream: 0,
+                frame,
+                lost: false,
+                receipt: Some(receipt),
+                resolved_below,
+                lost_bitmap: 0,
+                ltr_token: None,
+            };
+            self.sender.on_feedback(self.now, &feedback, &mut self.events, &mut self.stats);
+        }
+    }
+
+    #[test]
+    fn a_late_original_takes_its_loss_back_from_the_window_the_estimate_and_the_fec_trigger() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 2)]);
+        assert_eq!(host.sender.loss.nacked, 2);
+        assert!(host.sender.recent_loss(host.now));
+        assert_eq!(host.sender.estimator.lost_bytes(), 0, "held out until the frame is answered");
+
+        host.now += 30 * MS;
+        host.reported(0, &[4, 5], 1);
+
+        assert_eq!(host.sender.loss.nacked, 0);
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+        assert!(!host.sender.recent_loss(host.now), "nothing was lost, so FEC has nothing to answer");
+    }
+
+    #[test]
+    fn a_late_original_beside_a_real_loss_keeps_the_fec_trigger() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 2)]);
+
+        host.now += 30 * MS;
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.loss.nacked, 1);
+        assert!(host.sender.recent_loss(host.now), "packet 5 was really lost");
+    }
+
+    #[test]
+    fn two_frames_whose_requests_were_both_only_late_leave_no_loss_whichever_reports_first() {
+        for first_report in [0, 1] {
+            let mut host = Host::with_a_frame_sent(10);
+            host.send_another(10);
+            host.asked_for(&[(4, 1)]);
+            host.now += 5 * MS;
+            host.sender.on_nack(host.now, &Nack { stream: 0, frame: 1, ranges: vec![(4, 1)] }, &mut host.stats);
+
+            host.now += 30 * MS;
+            host.reported(first_report, &[4], 0);
+            host.reported(1 - first_report, &[4], 2);
+
+            assert_eq!(host.sender.loss.nacked, 0, "frame {first_report} reported first");
+            assert!(!host.sender.recent_loss(host.now), "frame {first_report} reported first");
+        }
+    }
+
+    #[test]
+    fn a_frame_whose_requests_were_only_late_doesnt_clear_another_frames_real_loss() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.send_another(10);
+        host.asked_for(&[(4, 1)]);
+        host.now += 5 * MS;
+        host.sender.on_nack(host.now, &Nack { stream: 0, frame: 1, ranges: vec![(4, 1)] }, &mut host.stats);
+        host.now += 5 * MS;
+        host.asked_for(&[(6, 1)]);
+
+        host.now += 30 * MS;
+        host.reported(0, &[4, 6], 0);
+
+        assert_eq!(host.sender.loss.nacked, 1);
+        assert!(host.sender.recent_loss(host.now), "frame 1 really lost packet 4");
+    }
+
+    #[test]
+    fn only_the_losses_still_standing_when_a_frame_is_answered_reach_the_estimate() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.send_another(10);
+        host.asked_for(&[(4, 3)]);
+        host.sender.on_nack(host.now, &Nack { stream: 0, frame: 1, ranges: vec![(2, 1)] }, &mut host.stats);
+        let real = host.sender.streams[&0].unresolved[&1].packets[2].len();
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+
+        host.now += 30 * MS;
+        host.reported(0, &[4, 5, 6], 0);
+        host.reported(1, &[], 2);
+
+        assert_eq!(host.sender.estimator.lost_bytes(), real);
+    }
+
+    #[test]
+    fn a_late_original_gives_its_bytes_back_to_the_arrival_count() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(5, 1)]);
+        host.now += 101 * MS;
+        host.asked_for(&[(8, 1)]);
+        host.asked_for(&[(5, 1)]);
+        assert_eq!(host.sender.arrived.lost(), host.frame().packets[5].len() as u64);
+
+        host.reported(0, &[5], 1);
+
+        assert_eq!(host.sender.arrived.lost(), 0);
+    }
+
+    #[test]
+    fn a_frame_resolved_early_is_not_confirmed_by_the_roll_while_its_own_report_can_still_come() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        host.now += 100 * MS;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW * 2);
+        host.sender.fec_ratio(host.now);
+
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+    }
+
+    #[test]
+    fn a_frame_resolved_early_whose_own_report_never_comes_reaches_the_drop_check_once_its_wait_is_over() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        let lost = host.sender.streams[&0].unreported[&0].charges.per_index[4].map_or(0, |charge| charge.bytes);
+        let due = host.sender.poll_timeout(host.now).expect("the unanswered frame is due");
+        assert!(due <= host.now + host.sender.unreported_for());
+
+        host.now = due;
+        host.sender.handle_timeout(host.now, &mut host.events, &mut host.stats);
+        host.now += 400 * MS;
+        host.send_another(5);
+
+        assert_eq!(host.sender.estimator.lost_bytes_in_drop_check(), lost);
+    }
+
+    #[test]
+    fn a_late_report_after_the_loss_was_confirmed_takes_nothing_back() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        host.now += host.sender.unreported_for() + MS;
+        host.sender.handle_timeout(host.now, &mut host.events, &mut host.stats);
+
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.loss.nacked, 1, "the estimate already has it as a loss");
+        assert!(host.sender.recent_loss(host.now));
+    }
+
+    #[test]
+    fn a_frame_parity_repaired_counts_in_the_window_it_was_sent_in() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW - 10 * MS);
+        host.asked_for(&[(2, 1)]);
+        host.send_another(10);
+        let fec = |host: &mut Host| {
+            let receipt = wire::FrameReceipt {
+                first_rx_us: 1,
+                last_rx_offset_us: 0,
+                complete_offset_us: 0,
+                original_bytes: 0,
+                recovery: crate::Recovery::Fec,
+                late_originals: wire::LateOriginals::default(),
+            };
+            let feedback =
+                Feedback { stream: 0, frame: 1, lost: false, receipt: Some(receipt), resolved_below: 0, lost_bitmap: 0, ltr_token: None };
+            host.sender.on_feedback(host.now, &feedback, &mut host.events, &mut host.stats);
+        };
+
+        fec(&mut host);
+
+        assert_eq!((host.sender.loss.nacked, host.sender.loss.next_nacked), (1, 1));
+    }
+
+    #[test]
+    fn a_frame_sent_after_its_window_ended_counts_with_its_losses_in_the_next_window() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW - 10 * MS);
+        host.asked_for(&[(2, 1)]);
+        host.send_another(10);
+        host.sender.on_nack(host.now, &Nack { stream: 0, frame: 1, ranges: vec![(0, 8)] }, &mut host.stats);
+        assert_eq!((host.sender.loss.sent, host.sender.loss.nacked), (10, 1));
+
+        host.now += 200 * MS;
+        host.sender.fec_ratio(host.now);
+
+        assert_eq!((host.sender.loss.sent, host.sender.loss.nacked), (10, 8));
+    }
+
+    #[test]
+    fn an_ended_window_waits_for_the_report_on_a_request_that_came_during_its_wait() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.send_another(10);
+        host.sender.loss.sent = 40;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW + 10 * MS);
+        host.asked_for(&[(2, 1)]);
+        host.now += 90 * MS;
+        host.sender.on_nack(host.now, &Nack { stream: 0, frame: 1, ranges: vec![(0, 8)] }, &mut host.stats);
+        host.now += 90 * MS;
+        host.sender.fec_ratio(host.now);
+        assert_eq!(host.sender.loss.nacked, 9, "the window is still waiting for frame 1's report");
+
+        host.reported(1, &(0..8).collect::<Vec<_>>(), 0);
+        host.now += 200 * MS;
+        host.sender.fec_ratio(host.now);
+
+        assert!(host.sender.loss.rate < HEAVY_LOSS, "the window read {:.2}", host.sender.loss.rate);
+    }
+
+    #[test]
+    fn a_packet_sent_again_for_a_repeated_request_stays_a_loss_even_if_reported_late() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.drain();
+        host.now += 101 * MS;
+        host.asked_for(&[(4, 1)]);
+        assert_eq!(host.stats.packets_retransmitted, 2);
+
+        host.now += 30 * MS;
+        host.reported(0, &[4], 1);
+
+        assert!(host.sender.recent_loss(host.now), "its first resend was lost too");
+        assert_eq!(host.sender.loss.nacked, 1);
+    }
+
+    #[test]
+    fn a_late_original_charged_in_the_window_before_still_comes_off_the_estimate() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.now += 300 * MS;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW - 300 * MS);
+        host.sender.fec_ratio(host.now);
+        assert_eq!(host.sender.loss.nacked, 0, "the window rolled");
+
+        host.now += 20 * MS;
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+        assert!(!host.sender.recent_loss(host.now));
+    }
+
+    #[test]
+    fn a_tail_probe_out_keeps_the_fec_trigger_on_when_the_frames_other_losses_were_late() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.probe();
+        host.drain();
+        host.asked_for(&[(5, 1), (9, 1)]);
+
+        host.now += 10 * MS;
+        host.reported(0, &[5], 1);
+
+        assert_eq!(host.sender.loss.nacked, 1);
+        assert!(host.sender.recent_loss(host.now), "the last packet's loss can't be taken back");
+    }
+
+    #[test]
+    fn the_window_waits_for_a_frame_another_report_resolved_before_its_own_arrived() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.send_another(5);
+        for _ in 0..30 {
+            host.sender.loss.sent += 1;
+        }
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW + 10 * MS);
+        host.asked_for(&[(0, 10)]);
+        host.now += 20 * MS;
+        host.reported(1, &[], 2);
+        assert!(!host.sender.streams[&0].unresolved.contains_key(&0));
+        host.sender.fec_ratio(host.now);
+
+        host.now += 5 * MS;
+        host.reported(0, &(0..10).collect::<Vec<_>>(), 2);
+
+        assert_eq!(host.sender.loss.nacked, 0, "the take-back landed in the window it was charged in");
+        assert_eq!(host.sender.loss.rate, 0.0, "the window didn't roll with the late packets counted as lost");
+    }
+
+    #[test]
+    fn a_request_answered_by_the_tail_probes_copy_is_not_taken_back_as_late() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.probe();
+        host.drain();
+        host.asked_for(&[(9, 1)]);
+        assert_eq!(host.sender.loss.nacked, 1);
+
+        host.now += 10 * MS;
+        host.reported(0, &[9], 1);
+
+        assert_eq!(host.sender.loss.nacked, 1, "the probe's copy arrived early, not the lost original");
+    }
+
+    #[test]
+    fn a_frame_resolved_by_a_later_frames_report_still_takes_back_its_late_originals() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        assert!(!host.sender.streams[&0].unresolved.contains_key(&0));
+
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.loss.nacked, 0);
     }
 
     #[test]
@@ -952,6 +1477,7 @@ mod tests {
             probes: MAX_PROBES,
             unanswered: MAX_PROBES,
             expires: None,
+            charges: Charges::default(),
         };
         let waits = ProbeWaits { tail_probe: second / 10, timeout: second / 5 };
 

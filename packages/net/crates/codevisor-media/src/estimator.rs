@@ -177,6 +177,22 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
+    #[cfg(test)]
+    pub fn lost_bytes_in_drop_check(&self) -> usize {
+        self.sent.latest().map_or(0, |latest| self.lost.bytes_within(latest))
+    }
+
+    pub fn on_lost_earlier(&mut self, at: Instant, bytes: usize, answered: Option<Instant>) {
+        let seen_until = answered.map(|answered| self.sent.latest().map_or(answered, |latest| latest.min(answered)));
+        let earliest = seen_until.and_then(|until| until.checked_sub(RECEIVE_WINDOW / 2));
+        self.lost.insert(earliest.map_or(at, |earliest| at.max(earliest)), bytes);
+    }
+
+    #[cfg(test)]
+    pub fn lost_bytes(&self) -> usize {
+        self.lost.bytes
+    }
+
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
         let trusted = Duration::from_secs_f64(TRUSTED_SPAN_JITTERS * self.jitter_us / 1e6).max(MIN_SPAN);
         if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
@@ -359,6 +375,12 @@ impl Throughput {
         self.bytes += bytes;
     }
 
+    fn insert(&mut self, at: Instant, bytes: usize) {
+        let after = self.entries.iter().rposition(|(pushed, _)| *pushed <= at).map_or(0, |index| index + 1);
+        self.entries.insert(after, (at, bytes));
+        self.bytes += bytes;
+    }
+
     fn bps(&self) -> Option<f64> {
         let (oldest, oldest_bytes) = *self.entries.front()?;
         let span = self.entries.back()?.0.saturating_duration_since(oldest);
@@ -424,6 +446,41 @@ mod tests {
     const MS: Duration = Duration::from_millis(1);
     const FRAME: Duration = Duration::from_micros(16_667);
     const OFFSET: i64 = 5_000_000;
+
+    #[test]
+    fn a_loss_confirmed_long_after_its_request_still_counts_toward_the_drop_check() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        let answered = start + 2_000 * MS;
+        estimator.on_sent(answered, 1_200);
+
+        estimator.on_lost_earlier(start, 6_000, Some(answered));
+
+        assert_eq!(estimator.lost.bytes_within(answered), 6_000);
+    }
+
+    #[test]
+    fn a_loss_answered_after_the_last_send_still_lands_where_the_drop_check_looks() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        estimator.on_sent(start, 1_200);
+
+        estimator.on_lost_earlier(start - 50 * MS, 6_000, Some(start + 600 * MS));
+
+        assert_eq!(estimator.lost.bytes_within(start), 6_000);
+    }
+
+    #[test]
+    fn the_losses_of_frames_given_up_keep_the_time_they_were_requested() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        let resumed = start + 1_500 * MS;
+        estimator.on_sent(resumed, 1_200);
+
+        estimator.on_lost_earlier(start, 60_000, None);
+
+        assert_eq!(estimator.lost.bytes_within(resumed), 0, "an outage's old losses aren't a fresh burst");
+    }
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
         Delivery { bytes, receive_span: span, send_span: Duration::ZERO }

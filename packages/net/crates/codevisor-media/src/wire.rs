@@ -147,6 +147,50 @@ pub struct FrameReceipt {
     pub complete_offset_us: u32,
     pub original_bytes: u32,
     pub recovery: Recovery,
+    pub late_originals: LateOriginals,
+}
+
+pub const MAX_LATE_RANGES: usize = 8;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LateOriginals {
+    ranges: [(u16, u16); MAX_LATE_RANGES],
+    len: u8,
+}
+
+impl LateOriginals {
+    pub fn from_indices(indices: impl IntoIterator<Item = u16>) -> Self {
+        let mut sorted: Vec<u16> = indices.into_iter().collect();
+        sorted.sort_unstable();
+        sorted.dedup();
+        let mut late = Self::default();
+        for index in sorted {
+            let len = usize::from(late.len);
+            if let Some((start, count)) = late.ranges[..len].last_mut()
+                && u32::from(*start) + u32::from(*count) == u32::from(index)
+            {
+                *count += 1;
+            } else if len == MAX_LATE_RANGES {
+                break;
+            } else {
+                late.ranges[len] = (index, 1);
+                late.len += 1;
+            }
+        }
+        late
+    }
+
+    pub fn ranges(&self) -> &[(u16, u16)] {
+        &self.ranges[..usize::from(self.len)]
+    }
+
+    pub fn indices(&self) -> impl Iterator<Item = usize> + '_ {
+        self.ranges().iter().flat_map(|&(start, count)| usize::from(start)..usize::from(start) + usize::from(count))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,10 +207,12 @@ pub struct Feedback {
 const FLAG_LOST: u8 = 1;
 const FLAG_RECEIPT: u8 = 2;
 const FLAG_LTR: u8 = 4;
+const FLAG_LATE_ORIGINALS: u8 = 8;
+const LATE_RANGE_BYTES: usize = 4;
 
 impl Feedback {
     pub fn encode(&self) -> Bytes {
-        let mut out = BytesMut::with_capacity(FEEDBACK_BYTES + LTR_BYTES);
+        let mut out = BytesMut::with_capacity(FEEDBACK_BYTES + LTR_BYTES + 1 + MAX_LATE_RANGES * LATE_RANGE_BYTES);
         out.put_u8(first_byte(Kind::Feedback));
         out.put_u8(self.stream);
         out.put_u32(self.frame);
@@ -179,6 +225,10 @@ impl Feedback {
         }
         if self.ltr_token.is_some() {
             flags |= FLAG_LTR;
+        }
+        let late_originals = self.receipt.map(|receipt| receipt.late_originals).unwrap_or_default();
+        if !late_originals.is_empty() {
+            flags |= FLAG_LATE_ORIGINALS;
         }
         out.put_u8(flags);
         out.put_u8(match self.receipt.map(|receipt| receipt.recovery) {
@@ -194,6 +244,7 @@ impl Feedback {
             complete_offset_us: 0,
             original_bytes: 0,
             recovery: Recovery::None,
+            late_originals: LateOriginals::default(),
         });
         out.put_u64(receipt.first_rx_us);
         out.put_u32(receipt.last_rx_offset_us);
@@ -201,6 +252,13 @@ impl Feedback {
         out.put_u32(receipt.original_bytes);
         if let Some(token) = self.ltr_token {
             out.put_u64(token);
+        }
+        if !late_originals.is_empty() {
+            out.put_u8(late_originals.len);
+            for &(start, count) in late_originals.ranges() {
+                out.put_u16(start);
+                out.put_u16(count);
+            }
         }
         out.freeze()
     }
@@ -225,6 +283,22 @@ impl Feedback {
         } else {
             None
         };
+        let late_at = FEEDBACK_BYTES + if flags & FLAG_LTR != 0 { LTR_BYTES } else { 0 };
+        let late_originals = if flags & FLAG_LATE_ORIGINALS != 0 {
+            let kept = datagram.get(late_at).map_or(0, |len| usize::from(*len).min(MAX_LATE_RANGES));
+            match datagram.get(late_at + 1..late_at + 1 + kept * LATE_RANGE_BYTES) {
+                Some(ranges) => {
+                    let mut late = LateOriginals { len: kept as u8, ..LateOriginals::default() };
+                    for (slot, range) in late.ranges.iter_mut().zip(ranges.as_chunks::<LATE_RANGE_BYTES>().0) {
+                        *slot = (u16::from_be_bytes([range[0], range[1]]), u16::from_be_bytes([range[2], range[3]]));
+                    }
+                    late
+                }
+                None => LateOriginals::default(),
+            }
+        } else {
+            LateOriginals::default()
+        };
         Some(Self {
             stream: datagram[1],
             frame: u32_at(2),
@@ -235,6 +309,7 @@ impl Feedback {
                 complete_offset_us: u32_at(28),
                 original_bytes: u32_at(32),
                 recovery,
+                late_originals,
             }),
             resolved_below: u32_at(8),
             lost_bitmap: u32_at(12),
@@ -437,6 +512,87 @@ mod tests {
         assert_eq!(PacketHeader::decode(Bytes::from(other_version)), None);
     }
 
+    fn late(indices: &[u16], ltr_token: Option<u64>) -> Feedback {
+        Feedback {
+            stream: 1,
+            frame: 9,
+            lost: false,
+            receipt: Some(FrameReceipt {
+                first_rx_us: 5,
+                last_rx_offset_us: 6,
+                complete_offset_us: 7,
+                original_bytes: 8,
+                recovery: Recovery::Nack,
+                late_originals: LateOriginals::from_indices(indices.iter().copied()),
+            }),
+            resolved_below: 9,
+            lost_bitmap: 0,
+            ltr_token,
+        }
+    }
+
+    #[test]
+    fn feedback_carries_the_late_originals_after_the_ltr_token_only_when_there_are_some() {
+        let tail: Vec<u16> = (80..160).chain([170, 172]).collect();
+        for token in [None, Some(77)] {
+            let none = late(&[], token).encode();
+            let some = late(&tail, token).encode();
+            assert_eq!(some.len(), none.len() + 1 + 3 * LATE_RANGE_BYTES);
+            assert_eq!(Feedback::decode(&none), Some(late(&[], token)));
+            assert_eq!(Feedback::decode(&some), Some(late(&tail, token)));
+        }
+    }
+
+    #[test]
+    fn feedback_naming_more_late_ranges_than_the_host_keeps_still_decodes_with_the_first_eight() {
+        let first_eight: Vec<u16> = (0..8).map(|index| index * 2).collect();
+        let mut nine = BytesMut::from(&late(&first_eight, None).encode()[..]);
+        let count_at = FEEDBACK_BYTES;
+        nine[count_at] = 9;
+        nine.put_u16(40);
+        nine.put_u16(1);
+
+        let decoded = Feedback::decode(&nine).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
+
+        assert_eq!(decoded, Some(LateOriginals::from_indices(first_eight)));
+    }
+
+    #[test]
+    fn feedback_cut_short_inside_its_late_ranges_still_decodes_without_them() {
+        let encoded = late(&[3, 4, 9], None).encode();
+        let short = &encoded[..encoded.len() - 2];
+
+        let decoded = Feedback::decode(short).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
+
+        assert_eq!(decoded, Some(LateOriginals::default()));
+    }
+
+    #[test]
+    fn late_originals_from_unsorted_repeated_indices_are_the_same_ranges() {
+        let late = LateOriginals::from_indices([5, 3, 4, 4, 9]);
+
+        assert_eq!(late.ranges(), &[(3, 3), (9, 1)]);
+    }
+
+    #[test]
+    fn late_originals_keep_the_first_eight_ranges_and_drop_the_rest() {
+        let scattered: Vec<u16> = (0..20).map(|index| index * 2).collect();
+        let late = LateOriginals::from_indices(scattered);
+
+        assert_eq!(late.ranges().len(), MAX_LATE_RANGES);
+        assert_eq!(late.indices().collect::<Vec<_>>(), (0..8).map(|index| index * 2).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn feedback_from_a_viewer_that_reports_no_late_originals_decodes_as_none_and_a_newer_field_is_ignored() {
+        let mut old = BytesMut::from(&late(&[], Some(77)).encode()[..]);
+        let decoded = Feedback::decode(&old).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
+        assert_eq!(decoded, Some(LateOriginals::default()));
+        old[6] |= 0x40;
+        old.put_u32(0xDEAD_BEEF);
+        assert_eq!(Feedback::decode(&old), Some(late(&[], Some(77))));
+    }
+
     #[test]
     fn feedback_carries_receipt_history_and_ltr_token() {
         let feedback = Feedback {
@@ -449,6 +605,7 @@ mod tests {
                 complete_offset_us: 2100,
                 original_bytes: 48_000,
                 recovery: Recovery::Nack,
+                late_originals: LateOriginals::default(),
             }),
             resolved_below: 40,
             lost_bitmap: 0b101,
