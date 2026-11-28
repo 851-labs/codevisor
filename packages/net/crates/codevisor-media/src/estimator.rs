@@ -177,6 +177,11 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
+    #[cfg(test)]
+    pub fn lost_bytes_in_drop_check(&self) -> usize {
+        self.sent.latest().map_or(0, |latest| self.lost.bytes_within(latest))
+    }
+
     pub fn on_lost_earlier(&mut self, at: Instant, bytes: usize, answered: Option<Instant>) {
         let seen_until = answered.map(|answered| self.sent.latest().map_or(answered, |latest| latest.min(answered)));
         let earliest = seen_until.and_then(|until| until.checked_sub(RECEIVE_WINDOW / 2));

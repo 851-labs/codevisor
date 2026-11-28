@@ -283,7 +283,7 @@ impl Feedback {
         } else {
             None
         };
-        let late_at = FEEDBACK_BYTES + if ltr_token.is_some() { LTR_BYTES } else { 0 };
+        let late_at = FEEDBACK_BYTES + if flags & FLAG_LTR != 0 { LTR_BYTES } else { 0 };
         let late_originals = if flags & FLAG_LATE_ORIGINALS != 0 {
             let kept = datagram.get(late_at).map_or(0, |len| usize::from(*len).min(MAX_LATE_RANGES));
             match datagram.get(late_at + 1..late_at + 1 + kept * LATE_RANGE_BYTES) {
