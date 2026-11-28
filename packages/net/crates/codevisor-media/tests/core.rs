@@ -1153,7 +1153,7 @@ fn a_slow_link_doesnt_ask_again_for_packets_still_on_their_way() {
         assert!(lowest >= 500e3, "seed {seed}: the estimate fell to {:.2} Mbit/s", lowest / 1e6);
         let retransmitted = sim.host.stats(sim.now).packets_retransmitted;
         let early = sim.nacked_before_arriving();
-        assert!(early * 20 <= retransmitted as usize, "seed {seed}: {early} of {retransmitted} were still on the link");
+        assert!(early <= 1, "seed {seed}: {early} of {retransmitted} resends were asked for while still on the link");
     }
 }
 
