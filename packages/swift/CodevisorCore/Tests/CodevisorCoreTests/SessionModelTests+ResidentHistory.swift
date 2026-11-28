@@ -136,4 +136,39 @@ extension SessionModelTests {
     #expect(await model.loadOlderHistory() == 0)
     #expect(client.transcriptPageRequests.map(\.before) == [nil, "1", "1"])
   }
+
+  @Test("An older page whose machine is away waits without an error, and loads once the machine is back")
+  func olderPageWaitsForTheMachine() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    func item(_ sequence: Int) -> ServerTranscriptItem {
+      ServerTranscriptItem(
+        id: UUID().uuidString, sessionId: sessionId.uuidString, sequence: sequence,
+        role: .user, text: "Message \(sequence)", createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:00:00.000Z", isGenerating: false,
+        hasDetails: false, revision: 1)
+    }
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [item(1)], nextBefore: "1", hasMore: true, eventCursor: 1)
+    client.olderTranscriptPage = ServerTranscriptPage(
+      items: [item(0)], nextBefore: nil, hasMore: false, eventCursor: 1)
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistoryForInitialDisplay()
+    let (reconnection, reconnect) = AsyncStream.makeStream(of: Void.self)
+    client.sendAttempts.reconnection = reconnection
+    client.failNextTranscriptPages(1)
+
+    let loading = Task { await model.loadOlderHistory() }
+    await client.sendAttempts.connectionWaits.wait()
+
+    #expect(model.isLoadingOlderHistory)
+    #expect(model.errorMessage == nil)
+    reconnect.finish()
+    #expect(await loading.value == 1)
+    #expect(model.errorMessage == nil)
+    #expect(!model.hasOlderHistory)
+  }
 }

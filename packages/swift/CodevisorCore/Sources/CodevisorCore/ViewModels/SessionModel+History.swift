@@ -51,9 +51,7 @@ extension SessionModel {
     do {
       while historyPaging.hasOlderPages, let cursor = historyPaging.olderPageCursor {
         let anchor = conversation.first?.id
-        let page = try await transport.completeHistoryPage(
-          transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
-          before: cursor, limit: Self.olderTranscriptPageSize)
+        let page = try await olderHistoryPage(before: cursor)
         try Task.checkCancellation()
         guard historyPaging.olderPageCursor == cursor, conversation.first?.id == anchor else { continue }
         let existing = Set(conversation.map(\.id))
@@ -73,6 +71,20 @@ extension SessionModel {
         errorMessage = serverErrorMessage(error)
       }
       return 0
+    }
+  }
+
+  private func olderHistoryPage(before cursor: String) async throws -> TranscriptHistoryPage {
+    while true {
+      do {
+        return try await transport.completeHistoryPage(
+          transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
+          before: cursor, limit: Self.olderTranscriptPageSize)
+      } catch  where ServerConnectionLoss.isConnectionLoss(error) {
+        let reconnected = await transport.waitUntilConnected()
+        try Task.checkCancellation()
+        guard reconnected else { throw error }
+      }
     }
   }
 }
