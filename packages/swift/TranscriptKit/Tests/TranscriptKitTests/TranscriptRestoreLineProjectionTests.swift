@@ -29,7 +29,7 @@ struct TranscriptRestoreLineProjectionTests {
         settledConversation: [.user(first), .assistant(reply), .user(later), .assistant(answer)],
         pendingUserMessage: nil, activeItem: nil, setupPhases: [created] + restores,
         waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
-        serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle),
+        sessionErrorMessage: nil, status: .idle),
       options: .init(includesConnectingRow: false))
     let setupRows = rows.compactMap { row -> String? in
       guard case let .setup(phases) = row.content else { return nil }
@@ -62,7 +62,7 @@ struct TranscriptRestoreLineProjectionTests {
         settledConversation: [.user(ask), .assistant(reply)],
         pendingUserMessage: nil, activeItem: .assistant(reply), setupPhases: [restore],
         waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
-        serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle),
+        sessionErrorMessage: nil, status: .idle),
       options: .init(includesConnectingRow: false))
     let order = rows.map(\.id)
 

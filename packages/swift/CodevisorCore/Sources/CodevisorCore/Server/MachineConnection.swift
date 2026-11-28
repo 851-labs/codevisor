@@ -16,11 +16,16 @@ public final class MachineConnection {
   let serverUpdate = ServerUpdateState()
   let reconnector: MachineReconnector
   let reconnectNotice: DelayedConnectionNotice
+  let awayNotice: DelayedConnectionNotice
 
-  init(machineId: String, reconnector: MachineReconnector, reconnectNotice: DelayedConnectionNotice) {
+  init(
+    machineId: String, reconnector: MachineReconnector, reconnectNotice: DelayedConnectionNotice,
+    awayNotice: DelayedConnectionNotice
+  ) {
     self.machineId = machineId
     self.reconnector = reconnector
     self.reconnectNotice = reconnectNotice
+    self.awayNotice = awayNotice
   }
 
   public internal(set) var navigationSyncState: NavigationSyncState? {
@@ -75,6 +80,7 @@ public final class MachineConnection {
     navigationSync.stopSyncing()
     availability = .waiting(reason)
     reconnectNotice.update(isActive: true)
+    awayNotice.update(isActive: true)
     navigationSync.beginCatchUp()
   }
 
@@ -82,11 +88,13 @@ public final class MachineConnection {
     if availability != .ready { connectedSince = Date() }
     availability = .ready
     reconnectNotice.update(isActive: false)
+    awayNotice.update(isActive: false)
   }
 
   func markFailed(_ message: String) {
     availability = .failed(message)
     reconnectNotice.update(isActive: true)
+    awayNotice.update(isActive: true)
     navigationSyncState = .stale(message)
   }
 

@@ -153,7 +153,6 @@ struct TranscriptFailedTurnProjectionTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: isLoadingInitialHistory,
-      serverWaitMessage: nil,
       sessionErrorMessage: sessionError,
       status: status
     )

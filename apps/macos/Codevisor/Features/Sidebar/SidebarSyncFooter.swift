@@ -10,8 +10,12 @@ struct SidebarSyncFooter: View {
       VStack(spacing: 0) {
         Hairline(color: .separatorColor)
         HStack(spacing: 6) {
-          ProgressView()
-            .controlSize(.mini)
+          if indicator.isOffline {
+            Image(systemName: "wifi.slash")
+          } else {
+            ProgressView()
+              .controlSize(.mini)
+          }
           Text(label)
             .lineLimit(1)
             .truncationMode(.tail)

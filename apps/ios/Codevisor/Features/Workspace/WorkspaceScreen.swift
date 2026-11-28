@@ -198,8 +198,11 @@ struct WorkspaceScreen: View {
   @ViewBuilder
   private var blockedServerContent: some View {
     let machines = environment.machines
-    switch machines.workspaceMachine(for: resolvedServerId) {
-    case let .listed(machine):
+    switch (machines.reach(for: resolvedServerId), machines.workspaceMachine(for: resolvedServerId)) {
+    case let (.needsAction(attention), _):
+      WorkspaceMachineAttentionView(
+        attention: attention, machineId: resolvedServerId, machineName: machines.displayName(for: resolvedServerId))
+    case let (.busy, .listed(machine)), let (.failed, .listed(machine)):
       ServerAvailabilityView(
         machineId: machine.id,
         availability: screenAvailability,
@@ -207,12 +210,8 @@ struct WorkspaceScreen: View {
         isLocal: false,
         serverUpdate: machines.updateActivity(for: resolvedServerId)
       )
-    case .removed:
-      ProgressStepScreen(
-        title: "Machine Removed", steps: [],
-        note: "This workspace's machine is no longer in your Codevisor account.")
-    case .unknown:
-      ProgressStepScreen(title: "Connecting…", steps: [])
+    default:
+      MachineWaitView()
     }
   }
 
@@ -349,6 +348,7 @@ struct WorkspaceScreen: View {
 
   var blocksServerContent: Bool {
     if isDraft { return false }
+    if environment.machines.attention(for: resolvedServerId) != nil { return true }
     if let pane = activePane, pane.kind == .chat,
       let controller = chatController(for: pane), controller.model != nil
     {

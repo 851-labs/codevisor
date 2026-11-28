@@ -3,7 +3,6 @@ import Foundation
 public enum PaneChat: Equatable {
   case ready(ChatSession, Project)
   case connecting(PaneChatMachine)
-  case offline(PaneChatMachine)
   case missing
 }
 
@@ -27,7 +26,7 @@ public struct PaneChatResolver {
     if let listed = listedChat(sessionId, preferring: machineId) { return listed }
     guard machines.availability(for: machineId) != .ready else { return .missing }
 
-    return isOffline(machineId) ? .offline(machine(machineId)) : .connecting(machine(machineId))
+    return .connecting(machine(machineId))
   }
 
   private func listedChat(_ sessionId: UUID, preferring machineId: String) -> PaneChat? {
@@ -37,13 +36,6 @@ public struct PaneChatResolver {
       })
     else { return nil }
     return .ready(session, project)
-  }
-
-  private func isOffline(_ machineId: String) -> Bool {
-    guard machines.availability(for: machineId) != .ready else { return false }
-
-    return machines.statusByMachineId[machineId]?.isReachable == false
-      || machines.cloudMachine(forMachineId: machineId)?.online == false
   }
 
   private func machine(_ machineId: String) -> PaneChatMachine {

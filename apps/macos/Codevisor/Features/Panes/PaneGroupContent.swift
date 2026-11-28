@@ -1,15 +1,25 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 struct PaneGroupContent: View {
   var group: PaneGroupModel
   @Environment(\.reusesChatPage) private var reusesChatPage
+  @Environment(AppEnvironment.self) private var environment
 
   var body: some View {
     if let descriptor = group.state.selectedPane {
-      PaneContentMount(group: group, paneId: descriptor.id)
-        .id(identity(of: descriptor))
+      if waitsForMachine(descriptor) {
+        MachineWaitView()
+      } else {
+        PaneContentMount(group: group, paneId: descriptor.id)
+          .id(identity(of: descriptor))
+      }
     }
+  }
+
+  private func waitsForMachine(_ descriptor: PaneDescriptorState) -> Bool {
+    descriptor.kind.needsLiveMachine && environment.machines.isAway(group.machineId(of: descriptor))
   }
 
   private func identity(of descriptor: PaneDescriptorState) -> String {

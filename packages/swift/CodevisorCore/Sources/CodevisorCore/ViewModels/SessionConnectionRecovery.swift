@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 final class SessionConnectionRecovery {
   private nonisolated static let maximumBackoffDoublings = 5
-  private static let reconnectingMessage = "Reconnecting…"
 
   weak var model: SessionModel?
   private(set) var task: Task<Void, Never>?
@@ -11,18 +10,15 @@ final class SessionConnectionRecovery {
   private var surfacedError: String?
 
   private let scheduler: SessionConnectionRecoveryScheduler
-  private let statusDelay: Duration
   private let retryBaseDelay: Duration
   private let retryMaximumDelay: Duration
 
   init(
     scheduler: SessionConnectionRecoveryScheduler,
-    statusDelay: Duration,
     retryBaseDelay: Duration,
     retryMaximumDelay: Duration
   ) {
     self.scheduler = scheduler
-    self.statusDelay = statusDelay
     self.retryBaseDelay = retryBaseDelay
     self.retryMaximumDelay = retryMaximumDelay
   }
@@ -50,27 +46,16 @@ final class SessionConnectionRecovery {
     generation &+= 1
     task?.cancel()
     task = nil
-    clearPresentation()
+    clearSurfacedError()
   }
 
-  func clearPresentation() {
+  func clearSurfacedError() {
     guard let model else { return }
 
-    model.connectionRecoveryMessage = model.synchronizationMessage
     if let surfacedError, model.errorMessage == surfacedError {
       model.errorMessage = nil
     }
     surfacedError = nil
-  }
-
-  func streamReconnectNoticeChanged(isVisible: Bool) {
-    guard let model else { return }
-
-    if isVisible {
-      if model.connectionRecoveryMessage == nil { model.connectionRecoveryMessage = model.synchronizationMessage }
-    } else if task == nil, surfacedError == nil {
-      model.connectionRecoveryMessage = nil
-    }
   }
 
   private func firstAttempt(generation: UInt64) -> Task<Void, Never> {
@@ -107,23 +92,12 @@ final class SessionConnectionRecovery {
   }
 
   private func retryUntilSettled(_ model: SessionModel) async {
-    let startedAt = scheduler.now()
     var failures = 1
-    var nextAttemptAt = startedAt.advanced(by: retryDelay(failures: failures))
-
     while !Task.isCancelled {
-      let now = scheduler.now()
-      let elapsed = now - startedAt
-      announceReconnecting(model, elapsed: elapsed)
-
-      if now < nextAttemptAt {
-        let wait = sleepInterval(model, untilAttempt: now.duration(to: nextAttemptAt), elapsed: elapsed)
-        do {
-          try await scheduler.sleep(wait)
-        } catch {
-          return
-        }
-        continue
+      do {
+        try await scheduler.sleep(retryDelay(failures: failures))
+      } catch {
+        return
       }
 
       let outcome = await model.performReconciliationAttempt()
@@ -134,14 +108,13 @@ final class SessionConnectionRecovery {
       }
 
       failures += 1
-      nextAttemptAt = scheduler.now().advanced(by: retryDelay(failures: failures))
     }
   }
 
   private func finish(_ outcome: SessionHistoryLoadOutcome) {
     switch outcome {
     case .loaded:
-      clearPresentation()
+      clearSurfacedError()
     case .cancelled:
       break
     case let .failed(message, _):
@@ -149,26 +122,9 @@ final class SessionConnectionRecovery {
     }
   }
 
-  private func announceReconnecting(_ model: SessionModel, elapsed: Duration) {
-    guard elapsed >= statusDelay, model.connectionRecoveryMessage == nil else { return }
-
-    model.connectionRecoveryMessage = Self.reconnectingMessage
-  }
-
-  private func sleepInterval(_ model: SessionModel, untilAttempt: Duration, elapsed: Duration) -> Duration {
-    guard isQuiet(model), elapsed < statusDelay else { return untilAttempt }
-
-    return min(untilAttempt, statusDelay - elapsed)
-  }
-
-  private func isQuiet(_ model: SessionModel) -> Bool {
-    model.connectionRecoveryMessage == nil && surfacedError == nil
-  }
-
   private func surfaceFailure(_ message: String) {
     guard let model else { return }
 
-    model.connectionRecoveryMessage = model.synchronizationMessage
     let previous = surfacedError
     surfacedError = message
     if model.errorMessage == nil || model.errorMessage == previous {

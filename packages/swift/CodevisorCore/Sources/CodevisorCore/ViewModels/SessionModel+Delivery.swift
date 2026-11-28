@@ -126,7 +126,6 @@ extension SessionModel {
   ) async -> SendOutcome {
     let notice = startSendingNotice(for: message.id)
     defer { notice.cancel() }
-    let startedAt = now()
     while true {
       do {
         return .accepted(try await prompt(message, delivery: delivery, actionID: actionID))
@@ -134,7 +133,6 @@ extension SessionModel {
         guard ServerConnectionLoss.isConnectionLoss(error) else { return .failed(error) }
         if message.id == unacceptedTurnPromptID { turnPromptWaitedForConnection = true }
         guard await transport.waitUntilConnected() else { return .failed(error) }
-        if StaleSend.hasWaitedTooLong(since: startedAt, now: now()) { return .failed(StaleSend.Error()) }
       }
     }
   }

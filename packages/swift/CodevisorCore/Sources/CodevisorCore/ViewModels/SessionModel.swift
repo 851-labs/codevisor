@@ -89,16 +89,7 @@ public final class SessionModel {
   public internal(set) var isLoadingOlderBotMessages = false
   public internal(set) var modelFallback: SessionModelFallback?
   public internal(set) var isTakingLongerThanExpected = false
-  public internal(set) var connectionRecoveryMessage: String? {
-    didSet {
-      if connectionRecoveryMessage != oldValue {
-        activeItemRevision &+= 1
-        transcriptProjectionRevision &+= 1
-      }
-    }
-  }
   @ObservationIgnored var streamSynchronization: SessionStreamSynchronization = .caughtUp
-  @ObservationIgnored let streamReconnectNotice: DelayedConnectionNotice
   let connectionRecovery: SessionConnectionRecovery
   let promptQueue: SessionPromptQueue
   let updateRoutes = SessionUpdateRoutes()
@@ -211,7 +202,6 @@ public final class SessionModel {
     now: @escaping @Sendable () -> Date = { Date() },
     quietTurnScheduler: SessionQuietTurnScheduler = .continuous,
     connectionRecoveryScheduler: SessionConnectionRecoveryScheduler = .continuous,
-    connectionRecoveryStatusDelay: Duration = .seconds(1),
     connectionRecoveryRetryBaseDelay: Duration = .milliseconds(500),
     connectionRecoveryRetryMaximumDelay: Duration = .seconds(5)
   ) {
@@ -225,18 +215,11 @@ public final class SessionModel {
     self.stalledTurnWatch = SessionStalledTurnWatch(scheduler: quietTurnScheduler)
     self.connectionRecovery = SessionConnectionRecovery(
       scheduler: connectionRecoveryScheduler,
-      statusDelay: connectionRecoveryStatusDelay,
       retryBaseDelay: connectionRecoveryRetryBaseDelay,
       retryMaximumDelay: connectionRecoveryRetryMaximumDelay
     )
-    self.streamReconnectNotice = DelayedConnectionNotice(
-      delay: connectionRecoveryStatusDelay, now: connectionRecoveryScheduler.now,
-      sleep: connectionRecoveryScheduler.sleep)
     connectionRecovery.model = self
     transcriptDetails.model = self
-    streamReconnectNotice.onVisibilityChange = { [weak self] isVisible in
-      self?.connectionRecovery.streamReconnectNoticeChanged(isVisible: isVisible)
-    }
     promptQueue.onMessageQueued = { [weak self] id in
       self?.confirmOutgoing(id)
     }

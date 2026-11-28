@@ -238,7 +238,7 @@ struct SessionTranscriptView: View {
     guard !controller.presentsBotConversation else { return false }
     guard !controller.hasUnsentMessages, controller.setupPhases.isEmpty else { return false }
     guard controller.sessionErrorMessage == nil, controller.sandboxPower == nil else { return false }
-    guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
+    guard !controller.isLoadingInitialHistory else { return false }
     switch controller.status {
     case .connecting, .failed: return false
     case .idle: break

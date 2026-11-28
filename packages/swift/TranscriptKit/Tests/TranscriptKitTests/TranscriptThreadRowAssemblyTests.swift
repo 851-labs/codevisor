@@ -58,7 +58,7 @@ struct TranscriptThreadRowAssemblyTests {
       TranscriptProjectionInput(
         settledConversation: settled, pendingUserMessage: nil, activeItem: nil, setupPhases: [],
         waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
-        serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle, botConversation: conversation),
+        sessionErrorMessage: nil, status: .idle, botConversation: conversation),
       options: .init(includesConnectingRow: false, presentsBotConversation: true))
 
     #expect(

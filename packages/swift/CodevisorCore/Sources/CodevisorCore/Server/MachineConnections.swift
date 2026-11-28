@@ -7,10 +7,17 @@ final class MachineConnections {
   var byId: [String: MachineConnection] = [:]
 
   @ObservationIgnored private let reconnectNoticeDelay: Duration
+  @ObservationIgnored private let awayNoticeDelay: Duration
+  @ObservationIgnored private let noticeScheduler: SessionConnectionRecoveryScheduler
   @ObservationIgnored private let scheduler: SessionConnectionRecoveryScheduler
 
-  init(reconnectNoticeDelay: Duration, scheduler: SessionConnectionRecoveryScheduler) {
+  init(
+    reconnectNoticeDelay: Duration, awayNoticeDelay: Duration = .seconds(5),
+    scheduler: SessionConnectionRecoveryScheduler, noticeScheduler: SessionConnectionRecoveryScheduler = .continuous
+  ) {
     self.reconnectNoticeDelay = reconnectNoticeDelay
+    self.awayNoticeDelay = awayNoticeDelay
+    self.noticeScheduler = noticeScheduler
     self.scheduler = scheduler
   }
 
@@ -30,7 +37,8 @@ final class MachineConnections {
     if let existing = byId[machineId] { return existing }
     let connection = MachineConnection(
       machineId: machineId, reconnector: MachineReconnector(scheduler: scheduler),
-      reconnectNotice: makeReconnectNotice())
+      reconnectNotice: makeNotice(delay: reconnectNoticeDelay, scheduler: scheduler),
+      awayNotice: makeNotice(delay: awayNoticeDelay, scheduler: noticeScheduler))
     byId[machineId] = connection
     return connection
   }
@@ -60,12 +68,17 @@ final class MachineConnections {
     byId[machineId]?.reconnectNotice.isVisible ?? true
   }
 
+  func isAway(_ machineId: String) -> Bool {
+    byId[machineId]?.awayNotice.isVisible ?? true
+  }
+
   func reportedIcon(for machineId: String) -> String? {
     byId[machineId]?.reportedIcon
   }
 
-  private func makeReconnectNotice() -> DelayedConnectionNotice {
-    DelayedConnectionNotice(
-      delay: reconnectNoticeDelay, now: scheduler.now, sleep: scheduler.sleep)
+  private func makeNotice(
+    delay: Duration, scheduler: SessionConnectionRecoveryScheduler
+  ) -> DelayedConnectionNotice {
+    DelayedConnectionNotice(delay: delay, now: scheduler.now, sleep: scheduler.sleep)
   }
 }

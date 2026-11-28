@@ -106,6 +106,9 @@ extension SessionController {
 
   var sendReadiness: SendQueue.Readiness {
     if transcriptSandboxPower != nil { return .waiting }
+    if let machines, let attention = machines.attention(for: project.serverId) {
+      return .failed(attention.title(machineName: machines.displayName(for: project.serverId)) + ".")
+    }
     if case let .failed(message) = configurationValidationState { return .failed(message) }
     let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready
     return isSettled ? .ready : .waiting

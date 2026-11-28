@@ -37,7 +37,6 @@ extension SessionController {
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
       waitingHarnessUpdateName: waitingHarnessUpdateName,
       isLoadingInitialHistory: isAwaitingInitialHistory,
-      serverWaitMessage: sandboxPower == nil ? serverWaitMessage : nil,
       sessionErrorMessage: sandboxPower == nil ? sessionErrorMessage : nil,
       status: sandboxPower == nil ? projectionStatus : .idle,
       activityMessage: sandboxPower == nil ? transcriptActivityOverride : nil,
@@ -233,19 +232,11 @@ extension SessionController {
   public var isTakingLongerThanExpected: Bool {
     model?.isTakingLongerThanExpected ?? false
   }
-  public var connectionRecoveryMessage: String? {
-    if model != nil, machines?.showsReconnectNotice(for: project.serverId) == true {
-      return "Reconnecting…"
-    }
-    return model?.connectionRecoveryMessage
-  }
-
   public var hasVisibleTranscript: Bool { presentationClock.visibleViewCount > 0 }
 
   public var transcriptActivityOverride: String? {
     guard !awaitsConnection else { return nil }
-    return connectionRecoveryMessage ?? serverWaitMessage
-      ?? waitingHarnessUpdateName.map { "Waiting for \($0) to finish updating..." }
+    return waitingHarnessUpdateName.map { "Waiting for \($0) to finish updating..." }
   }
 
   public var modelFallbackMessage: String? {

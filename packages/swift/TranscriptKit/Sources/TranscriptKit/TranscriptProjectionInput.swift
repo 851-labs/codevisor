@@ -16,7 +16,6 @@ public struct TranscriptProjectionInput: Sendable {
   public let waitingBackgroundTaskDescription: String?
   public let waitingHarnessUpdateName: String?
   public let isLoadingInitialHistory: Bool
-  public let serverWaitMessage: String?
   public let sessionErrorMessage: String?
   public let status: ConnectionStatus
   public let activityMessage: String?
@@ -34,7 +33,6 @@ public struct TranscriptProjectionInput: Sendable {
     waitingBackgroundTaskDescription: String?,
     waitingHarnessUpdateName: String?,
     isLoadingInitialHistory: Bool,
-    serverWaitMessage: String?,
     sessionErrorMessage: String?,
     status: ConnectionStatus,
     activityMessage: String? = nil,
@@ -51,7 +49,6 @@ public struct TranscriptProjectionInput: Sendable {
     self.waitingBackgroundTaskDescription = waitingBackgroundTaskDescription
     self.waitingHarnessUpdateName = waitingHarnessUpdateName
     self.isLoadingInitialHistory = isLoadingInitialHistory
-    self.serverWaitMessage = serverWaitMessage
     self.sessionErrorMessage = sessionErrorMessage
     self.status = status
     self.activityMessage = activityMessage
@@ -68,6 +65,6 @@ extension TranscriptProjectionInput {
     self.init(
       settledConversation: [], pendingUserMessage: nil, activeItem: nil, setupPhases: [],
       waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil, isLoadingInitialHistory: false,
-      serverWaitMessage: nil, sessionErrorMessage: nil, status: .idle, botConversation: conversation)
+      sessionErrorMessage: nil, status: .idle, botConversation: conversation)
   }
 }

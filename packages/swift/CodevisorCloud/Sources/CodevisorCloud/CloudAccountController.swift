@@ -45,6 +45,8 @@ public final class CloudAccountController {
   private let loopbackPool = CloudLoopbackBridgePool()
   @ObservationIgnored public var onSignedOut: (() -> Void)?
   @ObservationIgnored public var onMachinesRefreshed: (() -> Void)?
+  @ObservationIgnored public var onHubConnectionChanged: ((Bool) -> Void)?
+  public private(set) var isHubConnected = false
   @ObservationIgnored public var onLocalMachineRegistrationResolved: ((String) -> Void)?
   @ObservationIgnored public var localServerClient: (any CodevisorServerClienting)?
   @ObservationIgnored var accountSyncRegistrations: [String: Task<Bool, Never>] = [:]
@@ -210,6 +212,11 @@ public final class CloudAccountController {
     machineKeyPins.verifiedKey(for: machine)
   }
 
+  func hubWelcomeChanged(_ isWelcomed: Bool) {
+    if isHubConnected != isWelcomed { isHubConnected = isWelcomed }
+    onHubConnectionChanged?(isWelcomed)
+  }
+
   func tunnelConfigured(_ config: CloudTunnelConfig) {
     directPaths.onTunnelConfigured = { [weak self] in self?.reconcileDirectPaths() }
     directPaths.configureTunnel(config)
@@ -320,6 +327,7 @@ public final class CloudAccountController {
     loopbackPool.removeAll()
     directPaths.dropAll()
     hubLink.shutDownInBackground()
+    hubWelcomeChanged(false)
   }
 
   private func discardHubForCredentialChange() async {
@@ -328,6 +336,7 @@ public final class CloudAccountController {
     directPaths.dropAll()
     presence.cancel()
     await hubLink.shutDown()
+    hubWelcomeChanged(false)
   }
 
   private func fetchMachines(token: String) async throws -> [CloudMachine] {

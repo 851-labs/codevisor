@@ -23,6 +23,8 @@ struct SessionScreen: View {
   var onCenterTreeLiveChanged: ((SplitNode) -> Void)? = nil
 
   @Environment(\.reusesChatPage) private var reusesChatPage
+  @Environment(\.openSettings) private var openSettings
+  @Environment(AppEnvironment.self) private var environment
   @State private var input = InputHandling()
 
   var body: some View {
@@ -54,7 +56,12 @@ struct SessionScreen: View {
 
   private var centerContent: some View {
     Group {
-      if let centerTree, let centerLeafModel {
+      if let machineId = centerGroup.machineId, let attention = environment.machines.attention(for: machineId) {
+        MachineAttentionCard(attention, machineName: environment.machines.displayName(for: machineId)) {
+          SettingsRouter.shared.showMachines()
+          openSettings()
+        }
+      } else if let centerTree, let centerLeafModel {
         WorkspaceSplitView(
           node: centerTree,
           activeLeafId: activeLeafId ?? primaryLeafId,

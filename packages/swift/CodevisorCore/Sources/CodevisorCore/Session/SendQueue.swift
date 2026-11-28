@@ -54,7 +54,6 @@ final class SendQueue {
     let queuedAt = Date()
     var stage = Stage.preparing
     var showsProgress = false
-    var isStale = false
 
     var delivery: TranscriptDelivery? {
       if case let .failed(reason) = stage { return .failed(reason: reason) }
@@ -92,7 +91,6 @@ final class SendQueue {
 
   func enqueue(_ message: UserMessage, attachmentIDs: [UUID], route: Route) {
     entries.append(Entry(message: message, attachmentIDs: attachmentIDs, route: route))
-    markStale(message.id, after: StaleSend.limit)
     startWorker()
   }
 
@@ -111,8 +109,6 @@ final class SendQueue {
     for attachmentID in entries[index].attachmentIDs { attachments.retryAttachment(id: attachmentID) }
     entries[index].stage = .preparing
     entries[index].showsProgress = false
-    entries[index].isStale = false
-    markStale(id, after: StaleSend.limit)
     startWorker()
   }
 
@@ -168,28 +164,11 @@ final class SendQueue {
 
   private func send(_ message: UserMessage) async {
     if let failure = await readinessFailure() { return failPreparing(failure) }
-    if failIfStale(message.id) { return }
 
     switch await connect(message) {
     case let .ready(model): await send(message.id, through: model)
     case let .failed(reason): failPreparing(reason)
     case .withdrawn: withdraw(message.id)
-    }
-  }
-
-  private func failIfStale(_ id: UUID) -> Bool {
-    guard let index = index(of: id), entries[index].isStale else { return false }
-
-    fail(id, StaleSend.reason)
-    return true
-  }
-
-  private func markStale(_ id: UUID, after limit: Duration) {
-    Task { [weak self, clock] in
-      guard (try? await clock.sleep(for: limit)) != nil else { return }
-      guard let self, self.readiness() == .waiting else { return }
-      guard let index = self.index(of: id), self.entries[index].stage == .preparing else { return }
-      self.entries[index].isStale = true
     }
   }
 

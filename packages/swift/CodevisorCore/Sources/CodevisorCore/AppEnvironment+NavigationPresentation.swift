@@ -24,7 +24,8 @@ extension AppEnvironment {
 
   public func navigationSyncIndicator(hasVisibleContent: Bool) -> NavigationPresentation.SyncIndicator {
     NavigationPresentation.indicator(
-      machines: navigationPresentationMachines, hasVisibleContent: hasVisibleContent)
+      machines: navigationPresentationMachines, hasVisibleContent: hasVisibleContent,
+      isDeviceOffline: machines.showsDeviceOffline)
   }
 
   public func navigationLaunch(hasVisibleContent: Bool) -> NavigationPresentation.Launch {

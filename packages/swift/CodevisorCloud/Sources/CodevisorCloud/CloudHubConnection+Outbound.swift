@@ -99,7 +99,7 @@ extension CloudHubConnection {
     Log.cloud.error(
       "Cloud hub socket is unhealthy; reconnecting: \(String(describing: error), privacy: .public)"
     )
-    isWelcomed = false
+    setWelcomed(false)
     resetHeartbeat()
     socket?.cancel(with: .goingAway, reason: nil)
   }

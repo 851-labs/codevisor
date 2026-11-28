@@ -26,14 +26,10 @@ struct ChatPaneContentView: View {
       switch resolver.chat(chatSessionId, on: hostWorkspace.serverId, machineKey: descriptor.chatMachineKey) {
       case let .ready(chatSession, chatProject):
         ready(chatSession, in: chatProject)
-      case let .connecting(machine):
-        PaneChatUnavailableView(reason: .connecting(machine))
-      case let .offline(machine):
-        PaneChatUnavailableView(reason: .offline(machine)) {
-          Task { await environment.machines.retryMachine(machine.id) }
-        }
+      case .connecting:
+        MachineWaitView()
       case .missing:
-        PaneChatUnavailableView(reason: .missing, action: resetToPlaceholder)
+        PaneChatUnavailableView(action: resetToPlaceholder)
       }
     } else {
       NewChatView(

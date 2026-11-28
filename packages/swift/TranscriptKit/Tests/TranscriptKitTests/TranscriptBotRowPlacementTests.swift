@@ -97,7 +97,6 @@ struct TranscriptBotRowPlacementTests {
       waitingBackgroundTaskDescription: nil,
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
-      serverWaitMessage: nil,
       sessionErrorMessage: nil,
       status: .idle,
       botConversation: TranscriptBotConversation(messages: messages, isWorking: false)
