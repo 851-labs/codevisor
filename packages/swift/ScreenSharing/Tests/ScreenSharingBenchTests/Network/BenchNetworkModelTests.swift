@@ -55,6 +55,13 @@ struct BenchNetworkModelTests {
     #expect(arrivalsMs == [4, 4, 4, 4, 8, 8])
   }
 
+  @Test func aTickTooSmallToCountInNanosecondsLeavesArrivalsAsTheyAre() {
+    var model = BenchNetworkModel(
+      conditions: BenchNetworkConditions(id: "tiny tick", delayMs: 1, releaseTickMs: 1e-7), seed: 1)
+
+    #expect(model.send(byteCount: 1_000, atNs: 0) == .delivered(atNs: 1_000_000))
+  }
+
   @Test func jitterNeverReordersPackets() {
     var model = BenchNetworkModel(
       conditions: BenchNetworkConditions(id: "jittery", delayMs: 5, delayStandardDeviationMs: 20), seed: 3)
