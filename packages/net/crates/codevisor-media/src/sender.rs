@@ -145,10 +145,10 @@ impl Charges {
         self.fixed || self.per_index.iter().any(Option::is_some)
     }
 
-    fn confirm(&mut self, now: Instant, estimator: &mut Estimator) {
+    fn confirm(&mut self, answered: Option<Instant>, estimator: &mut Estimator) {
         if !std::mem::replace(&mut self.confirmed, true) {
             for charge in self.per_index.iter().flatten() {
-                estimator.on_lost_earlier(now, charge.lost_at, charge.bytes);
+                estimator.on_lost_earlier(charge.lost_at, charge.bytes, answered);
             }
         }
     }
@@ -364,7 +364,7 @@ impl Sender {
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
             let (oldest, mut dropped) = stream.unresolved.pop_first().expect("over the limit");
-            dropped.charges.confirm(now, &mut self.estimator);
+            dropped.charges.confirm(None, &mut self.estimator);
             self.in_flight_bytes -= dropped.bytes_out;
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
@@ -413,6 +413,13 @@ impl Sender {
         if age < LOSS_WINDOW * 2 && self.losses_still_to_be_answered(self.loss.id, now, answer_due) {
             return;
         }
+        let unreported_for = self.unreported_for();
+        for stream in self.streams.values_mut() {
+            let unanswered = stream.unreported.values_mut().filter(|unreported| now >= unreported.resolved + unreported_for);
+            for unreported in unanswered {
+                unreported.charges.confirm(Some(unreported.resolved), &mut self.estimator);
+            }
+        }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
         if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
             self.estimator.on_heavy_loss(now, current.min(1.0));
@@ -426,6 +433,10 @@ impl Sender {
             rate: self.loss.rate,
             ..LossWindow::default()
         };
+    }
+
+    fn unreported_for(&self) -> Duration {
+        self.rtt * 2 + self.config.frame_interval
     }
 
     fn recent_loss(&self, now: Instant) -> bool {
@@ -655,7 +666,7 @@ impl Sender {
         if let Some(unreported) =
             self.streams.get_mut(&feedback.stream).and_then(|stream| stream.unreported.get_mut(&feedback.frame))
         {
-            unreported.charges.confirm(now, &mut self.estimator);
+            unreported.charges.confirm(Some(now), &mut self.estimator);
         }
         self.note_rtt(now);
         self.ceiling_fec_ratio = self.fec_ratio(now);
@@ -670,7 +681,7 @@ impl Sender {
             events.push_back(Event::LtrAcked { stream: feedback.stream, token });
         }
         if let Some(mut frame) = stream.unresolved.remove(&feedback.frame) {
-            frame.charges.confirm(now, &mut self.estimator);
+            frame.charges.confirm(Some(now), &mut self.estimator);
             self.in_flight_bytes -= frame.bytes_out;
             if feedback.lost {
                 self.last_loss = Some(now);
@@ -714,7 +725,7 @@ impl Sender {
             }
         } else if let Some(receipt) = feedback.receipt.filter(|_| !feedback.lost)
             && let Some(unreported) = stream.unreported.remove(&feedback.frame)
-            && now.saturating_duration_since(unreported.resolved) <= self.rtt * 2 + self.config.frame_interval
+            && now.saturating_duration_since(unreported.resolved) <= self.unreported_for()
         {
             self.estimator.on_delivery(now, unreported.sent.delivery(receipt));
         }
@@ -728,7 +739,7 @@ impl Sender {
             self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
-                frame.charges.confirm(now, &mut self.estimator);
+                frame.charges.confirm(None, &mut self.estimator);
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
@@ -745,7 +756,7 @@ impl Sender {
                     if stream.unreported.len() > MAX_UNREPORTED
                         && let Some((_, mut evicted)) = stream.unreported.pop_first()
                     {
-                        evicted.charges.confirm(now, &mut self.estimator);
+                        evicted.charges.confirm(None, &mut self.estimator);
                     }
                 }
             }
@@ -811,7 +822,7 @@ impl Sender {
             }
             for number in expired {
                 if let Some(mut frame) = stream.unresolved.remove(&number) {
-                    frame.charges.confirm(now, &mut self.estimator);
+                    frame.charges.confirm(None, &mut self.estimator);
                     self.in_flight_bytes -= frame.bytes_out;
                 }
                 stats.frames_lost += 1;
@@ -1104,18 +1115,33 @@ mod tests {
     }
 
     #[test]
-    fn a_frame_resolved_early_is_confirmed_only_by_its_own_report_not_by_the_roll() {
+    fn a_frame_resolved_early_is_not_confirmed_by_the_roll_while_its_own_report_can_still_come() {
         let mut host = Host::with_a_frame_sent(10);
         host.asked_for(&[(4, 1)]);
         host.send_another(5);
         host.reported(1, &[], 2);
-        host.now += 300 * MS;
+        host.now += 100 * MS;
         host.sender.loss.started = Some(host.now - LOSS_WINDOW * 2);
         host.sender.fec_ratio(host.now);
 
         host.reported(0, &[4], 1);
 
         assert_eq!(host.sender.estimator.lost_bytes(), 0);
+    }
+
+    #[test]
+    fn a_frame_resolved_early_whose_own_report_never_comes_still_reaches_the_estimate() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        let lost = host.sender.streams[&0].unreported[&0].charges.per_index[4].map(|charge| charge.bytes);
+
+        host.now += 300 * MS;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW * 2);
+        host.sender.fec_ratio(host.now);
+
+        assert_eq!(Some(host.sender.estimator.lost_bytes()), lost);
     }
 
     #[test]

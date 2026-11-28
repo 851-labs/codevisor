@@ -177,9 +177,10 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
-    pub fn on_lost_earlier(&mut self, now: Instant, at: Instant, bytes: usize) {
-        let latest_counted = now.checked_sub(RECEIVE_WINDOW / 2).map_or(at, |half_a_window_ago| at.max(half_a_window_ago));
-        self.lost.insert(latest_counted, bytes);
+    pub fn on_lost_earlier(&mut self, at: Instant, bytes: usize, answered: Option<Instant>) {
+        let seen_until = answered.map(|answered| self.sent.latest().map_or(answered, |latest| latest.min(answered)));
+        let earliest = seen_until.and_then(|until| until.checked_sub(RECEIVE_WINDOW / 2));
+        self.lost.insert(earliest.map_or(at, |earliest| at.max(earliest)), bytes);
     }
 
     #[cfg(test)]
@@ -448,9 +449,32 @@ mod tests {
         let answered = start + 2_000 * MS;
         estimator.on_sent(answered, 1_200);
 
-        estimator.on_lost_earlier(answered, start, 6_000);
+        estimator.on_lost_earlier(start, 6_000, Some(answered));
 
         assert_eq!(estimator.lost.bytes_within(answered), 6_000);
+    }
+
+    #[test]
+    fn a_loss_answered_after_the_last_send_still_lands_where_the_drop_check_looks() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        estimator.on_sent(start, 1_200);
+
+        estimator.on_lost_earlier(start - 50 * MS, 6_000, Some(start + 600 * MS));
+
+        assert_eq!(estimator.lost.bytes_within(start), 6_000);
+    }
+
+    #[test]
+    fn the_losses_of_frames_given_up_keep_the_time_they_were_requested() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        let resumed = start + 1_500 * MS;
+        estimator.on_sent(resumed, 1_200);
+
+        estimator.on_lost_earlier(start, 60_000, None);
+
+        assert_eq!(estimator.lost.bytes_within(resumed), 0, "an outage's old losses aren't a fresh burst");
     }
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
