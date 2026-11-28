@@ -7,19 +7,8 @@ struct LaunchFailureView: View {
   let actions: LaunchActions
 
   var body: some View {
-    IconAnchoredStack {
-      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
-      ProgressStepTitle(title: failure.title)
-      Text(failure.message)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .textSelection(.enabled)
-        .frame(maxWidth: ProgressStepList.width)
+    LaunchMessageView(title: failure.title, message: failure.message) {
       LaunchFailureButtons(failure: failure, actions: actions)
-        .padding(.top, 4)
     }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(failure.title)
   }
 }

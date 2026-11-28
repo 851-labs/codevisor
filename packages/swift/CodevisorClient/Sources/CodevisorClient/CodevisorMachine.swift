@@ -46,11 +46,13 @@ public struct CodevisorMachine: Identifiable, Sendable, Equatable {
 
   private static var localDisplayName: String {
     #if os(macOS)
-      Host.current().localizedName ?? "Local Codevisor"
+      Host.current().localizedName ?? localFallbackName
     #else
-      ProcessInfo.processInfo.hostName
+      localFallbackName
     #endif
   }
+
+  private static let localFallbackName = "Local Codevisor"
 
   public static let cloudIdPrefix = "cloud:"
   public static let cloudPlaceholderBaseURL = URL(string: "https://cloud-relay.invalid")!

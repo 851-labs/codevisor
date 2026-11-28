@@ -6,8 +6,8 @@ struct LaunchDataUpdateView: View {
   let upgrades: LaunchUpgradeLog
 
   var body: some View {
-    IconAnchoredStack {
-      CodevisorAppIconView(size: CodevisorAppIconView.screenHeaderSide)
+    CenteredLaunchStack {
+      LaunchMark()
       ProgressStepTitle(title: "Updating Codevisor")
       ProgressStepCard(steps: upgrades.entries.map(Self.step))
     }

@@ -10,7 +10,8 @@ public actor CloudDirectConnection: CloudChannelHosting {
   private let machinePublicKey: String
   private let directURL: URL
   private let credentialStore: any CloudCredentialStore
-  private let deviceName: String
+  private let chosenDeviceName: String?
+  private lazy var deviceName = chosenDeviceName ?? CloudHubConnection.defaultDeviceName
   private let deviceOS: String
   private let appVersion: String?
   private let webSocketTransport: any ServerWebSocketTransport
@@ -40,7 +41,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
     machineDeviceId: String,
     machinePublicKey: String,
     credentialStore: any CloudCredentialStore,
-    deviceName: String = CloudHubConnection.defaultDeviceName,
+    deviceName: String? = nil,
     deviceOS: String = CloudHubConnection.defaultDeviceOS,
     appVersion: String? = nil,
     webSocketTransport: any ServerWebSocketTransport = URLSessionWebSocketTransport(),
@@ -57,7 +58,7 @@ public actor CloudDirectConnection: CloudChannelHosting {
     self.machineDeviceId = machineDeviceId
     self.machinePublicKey = machinePublicKey
     self.credentialStore = credentialStore
-    self.deviceName = deviceName
+    self.chosenDeviceName = deviceName
     self.deviceOS = deviceOS
     self.appVersion = appVersion
     self.webSocketTransport = webSocketTransport
