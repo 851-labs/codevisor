@@ -85,6 +85,27 @@ struct ScreenSharingViewerTests {
     return live
   }
 
+  @Test func thePickerIsOfferedWhenAnotherDisplayCanOnlyBeExplained() {
+    var state = ScreenSharingViewer.State(machineName: "workstation")
+    state.surface.displays = [Self.display]
+    #expect(!state.offersAChoiceOfDisplays)
+
+    state.surface.unavailableDisplays = [
+      ServerScreenSharingUnavailableDisplay(
+        id: "vnc:desktop", name: "Desktop", problem: "The desktop on this machine isn't running.")
+    ]
+    #expect(state.offersAChoiceOfDisplays)
+    #expect(state.displays == [Self.display])
+  }
+
+  @Test func aFailedSwitchNamesThePickedDisplayEvenOnceItIsNoLongerListed() {
+    var state = ScreenSharingViewer.State(machineName: "workstation")
+    state.surface = Self.live(
+      switch: ScreenSharingDisplaySwitch(displayId: "vnc:screen", name: "Screen", phase: .unavailable(message: nil)))
+
+    #expect(state.displaySwitchLine == .failed("Couldn't switch to Screen."))
+  }
+
   @Test func thePickerShowsADisplayBeingSwitchedToAndGoesBackWhenTheSwitchFails() {
     var state = ScreenSharingViewer.State(machineName: "croissant")
     state.surface = Self.live(switch: ScreenSharingDisplaySwitch(displayId: "studio", phase: .switching))

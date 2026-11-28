@@ -1,3 +1,5 @@
+import CodevisorClient
+import CodevisorCore
 import CodevisorTestSupport
 import Foundation
 import ScreenSharing
@@ -122,6 +124,60 @@ struct ScreenSharingDesktopsTests {
 
     #expect(harness.host.starts.map(\.displayId) == [nil, FakeHost.second.id])
     #expect(relaunched?.selectedDisplay == FakeHost.second)
+  }
+
+  @Test("A pick the machine can't switch to isn't saved, and the phone says why until it's dismissed")
+  func failedPickIsNotSaved() async {
+    let harness = DesktopsHarness()
+    harness.host.displays = [FakeHost.display, FakeHost.second]
+    harness.host.displaySwitchAnswer = .unavailable(message: "That display is asleep.")
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    model?.select(displayId: FakeHost.second.id)
+    await awaitObserved { model?.displaySwitchFailure != nil }
+
+    #expect(model?.displaySwitchFailure == "That display is asleep.")
+    let saved = ScreenSharingMachinePreferences(defaults: harness.defaults)
+    #expect(saved.preferredDisplay(machineId: DesktopsHarness.machineId) == nil)
+    model?.dismissDisplaySwitchFailure()
+    #expect(model?.displaySwitchFailure == nil)
+
+    model?.select(displayId: FakeHost.second.id)
+    await awaitObserved { model?.displaySwitchFailure != nil }
+    #expect(model?.displaySwitchFailure == "That display is asleep.", "picking it again shows the reason again")
+  }
+
+  @Test(
+    "While a display switch is under way the menu shows the display picked, and picking the old one again goes back")
+  func menuFollowsAPendingSwitch() async {
+    let harness = DesktopsHarness()
+    harness.host.displays = [FakeHost.display, FakeHost.second]
+    harness.host.displaySwitchAnswer = .stillSwitching
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    model?.select(displayId: FakeHost.second.id)
+    #expect(model?.pickedDisplayId == FakeHost.second.id && model?.selectedDisplay == FakeHost.display)
+    model?.select(displayId: FakeHost.display.id)
+    #expect(model?.pickedDisplayId == FakeHost.display.id)
+  }
+
+  @Test("A display the machine can't share is listed with its reason, and can't be picked")
+  func unavailableDisplayIsExplained() async {
+    let harness = DesktopsHarness()
+    let missing = ServerScreenSharingUnavailableDisplay(
+      id: "vnc:desktop", name: "Desktop", problem: "The desktop on this machine isn't running.")
+    harness.host.unavailable = [missing]
+    let model = harness.model()
+    harness.show(model)
+    await harness.goLive(model)
+
+    #expect(model?.unavailableDisplays == [missing] && model?.offersAChoiceOfDisplays == true)
+    model?.select(displayId: missing.id)
+    #expect(harness.host.starts.count == 1 && model?.selectedDisplay == FakeHost.display)
   }
 
   @Test("Until a display is picked for the machine, the one saved on the pane is asked for")

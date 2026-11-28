@@ -7,6 +7,7 @@ public struct ScreenSharingSurfaceSnapshot: Equatable, Sendable {
   public var isTakingLong = false
   public var hostNotice: String?
   public var displays: [ServerScreenSharingDisplay] = []
+  public var unavailableDisplays: [ServerScreenSharingUnavailableDisplay] = []
   public var displayId: String?
   public var displaySwitch: ScreenSharingDisplaySwitch?
   public var endpoint: ScreenSharingViewerEndpoint?

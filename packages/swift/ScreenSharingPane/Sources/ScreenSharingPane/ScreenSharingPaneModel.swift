@@ -19,7 +19,8 @@ public final class ScreenSharingPaneModel {
 
   @ObservationIgnored private let connection: ScreenSharingConnection
   @ObservationIgnored private let now: () -> ContinuousClock.Instant
-  @ObservationIgnored private let onDisplayChosen: (String) -> Void
+  @ObservationIgnored private let chosenDisplay: ScreenSharingChosenDisplay
+  private var dismissedDisplaySwitch: ScreenSharingDisplaySwitch?
   @ObservationIgnored private var surface: ScreenSharingSurface?
   @ObservationIgnored private var views: [UUID: (pane: UUID, isOnScreen: Bool)] = [:]
   @ObservationIgnored private var opened: (pane: UUID, at: ContinuousClock.Instant)?
@@ -34,7 +35,7 @@ public final class ScreenSharingPaneModel {
     self.connection = connection
     self.machineName = machineName
     self.now = now
-    self.onDisplayChosen = onDisplayChosen
+    chosenDisplay = ScreenSharingChosenDisplay(connection: connection, save: onDisplayChosen)
     watchSession()
   }
 
@@ -64,7 +65,17 @@ public final class ScreenSharingPaneModel {
 
   public var displays: [ServerScreenSharingDisplay] { connection.displays }
 
+  public var unavailableDisplays: [ServerScreenSharingUnavailableDisplay] { connection.unavailableDisplays }
+
+  public var offersAChoiceOfDisplays: Bool { displays.count + unavailableDisplays.count > 1 }
+
   public var selectedDisplay: ServerScreenSharingDisplay? { connection.display }
+
+  public var pickedDisplayId: String? {
+    guard let pending = connection.displaySwitch, pending.phase == .switching else { return selectedDisplay?.id }
+
+    return pending.displayId
+  }
 
   public var control: ScreenSharingControlSession? { viewed?.control }
 
@@ -89,10 +100,21 @@ public final class ScreenSharingPaneModel {
   }
 
   public func select(displayId id: String) {
-    guard id != selectedDisplay?.id, displays.contains(where: { $0.id == id }) else { return }
+    guard id != pickedDisplayId, displays.contains(where: { $0.id == id }) else { return }
 
+    dismissedDisplaySwitch = nil
+    chosenDisplay.choose(id)
     connection.switchDisplay(to: id)
-    onDisplayChosen(id)
+  }
+
+  public var displaySwitchFailure: String? {
+    guard let result = connection.displaySwitch, result != dismissedDisplaySwitch else { return nil }
+
+    return result.failure
+  }
+
+  public func dismissDisplaySwitchFailure() {
+    dismissedDisplaySwitch = connection.displaySwitch
   }
 
   public func toggle(_ modifier: ScreenSharingModifiers) {

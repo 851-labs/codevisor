@@ -55,6 +55,7 @@ struct ScreenSharingConnectionLog {
     case .openRequested: "Open Desktop"
     case .retryRequested: "Retry"
     case .restartRequested: "restart"
+    case .displayPicked: "display picked"
     case .stepEntered: "next step"
     case .firstFrameDecoded: "first frame decoded"
     case .attemptEnded(.dropped(let reason)): "attempt dropped: \(describe(reason))"

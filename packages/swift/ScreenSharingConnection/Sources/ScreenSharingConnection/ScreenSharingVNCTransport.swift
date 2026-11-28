@@ -12,6 +12,8 @@ public final class ScreenSharingVNCTransport: ScreenSharingTransport {
   private let scroll: VNCScrollInput
   private var session: VNCScreenSharingSession?
 
+  public var switchesDisplayByReconnecting: Bool { true }
+
   public init(
     open: @escaping Open, arbitratedByServer: Bool, viewerName: String? = nil,
     keys: VNCKeyTranslator = VNCKeyTranslator(), scroll: VNCScrollInput = .wheel

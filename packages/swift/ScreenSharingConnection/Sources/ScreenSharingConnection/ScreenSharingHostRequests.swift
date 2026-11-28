@@ -41,8 +41,9 @@ final class ScreenSharingHostRequests {
     return request
   }
 
-  func capabilities() async throws -> ScreenSharingHostReply {
+  func capabilities(seen: (ScreenSharingHostReply) -> Void = { _ in }) async throws -> ScreenSharingHostReply {
     let reply = try await retrying(Self.capabilities(of: machine))
+    seen(reply)
     guard reply.isCurrentHost(forTarget: machine.target != nil) else {
       throw ScreenSharingAttemptEnd.refused(.updateNeeded)
     }

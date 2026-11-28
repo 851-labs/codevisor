@@ -1,4 +1,5 @@
 #if os(iOS)
+  import CodevisorClient
   import SwiftUI
   import UIKit
 
@@ -24,12 +25,19 @@
         ScreenSharingPaneStatus(model: model)
       }
       .background { ScreenSharingOnScreenProbe(model: model, pane: pane) }
-      .overlay(alignment: .top) { controlNotice.padding(.top, 8) }
+      .overlay(alignment: .top) {
+        VStack(spacing: 6) {
+          controlNotice
+          ScreenSharingDisplaySwitchNotice(model: model)
+        }
+        .padding(.top, 8)
+      }
       .overlay(alignment: .bottom) {
         if showsHint { hint.padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity)) }
       }
       .sheet(isPresented: Bindable(model).connectionDetailsShown) { ScreenSharingConnectionDetails(model: model) }
       .animation(.snappy, value: model.control?.notice)
+      .animation(.snappy, value: model.displaySwitchFailure)
       .animation(.snappy, value: showsHint)
       .task(id: model.isViewing) {
         guard model.isViewing, !hintShown else { return }
@@ -78,15 +86,22 @@
     public var body: some ToolbarContent {
       ToolbarItem(id: "screen-sharing.actions", placement: .topBarTrailing) {
         Menu {
-          if model.displays.count > 1 {
+          if model.offersAChoiceOfDisplays {
             Picker(
               "Display",
               selection: Binding(
-                get: { model.selectedDisplay?.id ?? "" },
+                get: { model.pickedDisplayId ?? model.displays.first?.id ?? "" },
                 set: { model.select(displayId: $0) })
             ) {
               ForEach(model.displays, id: \.id) { display in
                 Text(display.name).tag(display.id)
+              }
+            }
+            if !model.unavailableDisplays.isEmpty {
+              Section("Not Available") {
+                ForEach(model.unavailableDisplays) { display in
+                  Button(display.summary) {}.disabled(true)
+                }
               }
             }
           }
