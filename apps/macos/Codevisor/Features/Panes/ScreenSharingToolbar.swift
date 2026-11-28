@@ -88,21 +88,20 @@ private struct ScreenSharingDisplayPicker: View {
 
   var body: some View {
     if store.offersAChoiceOfDisplays {
-      if store.unavailableDisplays.isEmpty {
-        choices.pickerStyle(.menu).fixedSize().help(help)
-      } else {
-        Menu {
-          choices.pickerStyle(.inline)
+      Menu {
+        choices.pickerStyle(.inline)
+        if !store.unavailableDisplays.isEmpty {
           ScreenSharingUnavailableDisplays(displays: store.unavailableDisplays)
-        } label: {
-          Text(selectedName)
         }
-        .fixedSize().help(help)
+      } label: {
+        Text(selectedName)
       }
+      .fixedSize()
+      .help("Switch to another display of this machine")
+      .accessibilityLabel("Display")
+      .accessibilityValue(selectedName)
     }
   }
-
-  private let help = "Switch to another display of this machine"
 
   private var choices: some View {
     Picker(
@@ -118,7 +117,10 @@ private struct ScreenSharingDisplayPicker: View {
 
   private var selectedId: String { store.selectedDisplayId ?? store.displays.first?.id ?? "" }
 
-  private var selectedName: String { store.displays.first { $0.id == selectedId }?.name ?? "Display" }
+  private var selectedName: String {
+    store.displays.first { $0.id == selectedId }?.name
+      ?? store.unavailableDisplays.first { $0.id == selectedId }?.name ?? "Display"
+  }
 }
 
 private struct ScreenSharingUnavailableDisplays: View {
