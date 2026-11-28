@@ -128,7 +128,7 @@ struct Charge {
     lost_at: Instant,
     position: u64,
     bytes: usize,
-    arrived_lost: bool,
+    arrived_lost: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -145,10 +145,10 @@ impl Charges {
         self.fixed || self.per_index.iter().any(Option::is_some)
     }
 
-    fn confirm(&mut self, estimator: &mut Estimator) {
+    fn confirm(&mut self, now: Instant, estimator: &mut Estimator) {
         if !std::mem::replace(&mut self.confirmed, true) {
             for charge in self.per_index.iter().flatten() {
-                estimator.on_lost_earlier(charge.lost_at, charge.bytes);
+                estimator.on_lost_earlier(now, charge.lost_at, charge.bytes);
             }
         }
     }
@@ -364,7 +364,7 @@ impl Sender {
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
             let (oldest, mut dropped) = stream.unresolved.pop_first().expect("over the limit");
-            dropped.charges.confirm(&mut self.estimator);
+            dropped.charges.confirm(now, &mut self.estimator);
             self.in_flight_bytes -= dropped.bytes_out;
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
@@ -413,12 +413,6 @@ impl Sender {
         if age < LOSS_WINDOW * 2 && self.losses_still_to_be_answered(self.loss.id, now, answer_due) {
             return;
         }
-        for stream in self.streams.values_mut() {
-            let answered = stream.unreported.values_mut().filter(|unreported| now >= unreported.resolved + answer_due);
-            for unreported in answered {
-                unreported.charges.confirm(&mut self.estimator);
-            }
-        }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
         if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
             self.estimator.on_heavy_loss(now, current.min(1.0));
@@ -457,8 +451,8 @@ impl Sender {
                 if let Some(nacked) = self.loss.nacked_in(charge.window) {
                     *nacked = nacked.saturating_sub(1);
                 }
-                if charge.arrived_lost {
-                    self.arrived.give_back(charge.position, charge.bytes as u64);
+                if let Some(generation) = charge.arrived_lost {
+                    self.arrived.give_back(generation, charge.position, charge.bytes as u64);
                 }
             }
         }
@@ -580,7 +574,7 @@ impl Sender {
                 let bytes = frame.packets[index].len() as u64;
                 frame.counted_lost[index] = self.arrived.note_lost(frame.positions[index], bytes);
                 if let Some(charge) = frame.charges.per_index[index].as_mut() {
-                    charge.arrived_lost = frame.counted_lost[index];
+                    charge.arrived_lost = frame.counted_lost[index].then_some(self.arrived.generation());
                 }
             }
         }
@@ -600,7 +594,8 @@ impl Sender {
                 first_losses += 1;
                 let bytes = frame.packets[index].len();
                 let position = frame.positions[index];
-                let charge = Charge { window, lost_at: now, position, bytes, arrived_lost: frame.counted_lost[index] };
+                let arrived_lost = frame.counted_lost[index].then_some(self.arrived.generation());
+                let charge = Charge { window, lost_at: now, position, bytes, arrived_lost };
                 frame.charges.per_index[index] = Some(charge);
                 if index + 1 == frame.data_count
                     && let Some(probe) = frame.probe
@@ -660,7 +655,7 @@ impl Sender {
         if let Some(unreported) =
             self.streams.get_mut(&feedback.stream).and_then(|stream| stream.unreported.get_mut(&feedback.frame))
         {
-            unreported.charges.confirm(&mut self.estimator);
+            unreported.charges.confirm(now, &mut self.estimator);
         }
         self.note_rtt(now);
         self.ceiling_fec_ratio = self.fec_ratio(now);
@@ -675,7 +670,7 @@ impl Sender {
             events.push_back(Event::LtrAcked { stream: feedback.stream, token });
         }
         if let Some(mut frame) = stream.unresolved.remove(&feedback.frame) {
-            frame.charges.confirm(&mut self.estimator);
+            frame.charges.confirm(now, &mut self.estimator);
             self.in_flight_bytes -= frame.bytes_out;
             if feedback.lost {
                 self.last_loss = Some(now);
@@ -690,7 +685,9 @@ impl Sender {
                 events.push_back(Event::FrameAcked(ack));
             }
             if feedback.receipt.is_some_and(|receipt| receipt.recovery == crate::Recovery::Fec) {
-                self.loss.nacked += 1;
+                if let Some(nacked) = self.loss.nacked_in(self.loss.counted_in(frame.charges.sent_in)) {
+                    *nacked += 1;
+                }
                 self.last_loss = Some(now);
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
@@ -731,7 +728,7 @@ impl Sender {
             self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
-                frame.charges.confirm(&mut self.estimator);
+                frame.charges.confirm(now, &mut self.estimator);
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
@@ -748,7 +745,7 @@ impl Sender {
                     if stream.unreported.len() > MAX_UNREPORTED
                         && let Some((_, mut evicted)) = stream.unreported.pop_first()
                     {
-                        evicted.charges.confirm(&mut self.estimator);
+                        evicted.charges.confirm(now, &mut self.estimator);
                     }
                 }
             }
@@ -814,7 +811,7 @@ impl Sender {
             }
             for number in expired {
                 if let Some(mut frame) = stream.unresolved.remove(&number) {
-                    frame.charges.confirm(&mut self.estimator);
+                    frame.charges.confirm(now, &mut self.estimator);
                     self.in_flight_bytes -= frame.bytes_out;
                 }
                 stats.frames_lost += 1;
@@ -1104,6 +1101,46 @@ mod tests {
         host.reported(0, &[5], 1);
 
         assert_eq!(host.sender.arrived.lost(), 0);
+    }
+
+    #[test]
+    fn a_frame_resolved_early_is_confirmed_only_by_its_own_report_not_by_the_roll() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.asked_for(&[(4, 1)]);
+        host.send_another(5);
+        host.reported(1, &[], 2);
+        host.now += 300 * MS;
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW * 2);
+        host.sender.fec_ratio(host.now);
+
+        host.reported(0, &[4], 1);
+
+        assert_eq!(host.sender.estimator.lost_bytes(), 0);
+    }
+
+    #[test]
+    fn a_frame_parity_repaired_counts_in_the_window_it_was_sent_in() {
+        let mut host = Host::with_a_frame_sent(10);
+        host.sender.loss.started = Some(host.now - LOSS_WINDOW - 10 * MS);
+        host.asked_for(&[(2, 1)]);
+        host.send_another(10);
+        let fec = |host: &mut Host| {
+            let receipt = wire::FrameReceipt {
+                first_rx_us: 1,
+                last_rx_offset_us: 0,
+                complete_offset_us: 0,
+                original_bytes: 0,
+                recovery: crate::Recovery::Fec,
+                late_originals: wire::LateOriginals::default(),
+            };
+            let feedback =
+                Feedback { stream: 0, frame: 1, lost: false, receipt: Some(receipt), resolved_below: 0, lost_bitmap: 0, ltr_token: None };
+            host.sender.on_feedback(host.now, &feedback, &mut host.events, &mut host.stats);
+        };
+
+        fec(&mut host);
+
+        assert_eq!((host.sender.loss.nacked, host.sender.loss.next_nacked), (1, 1));
     }
 
     #[test]

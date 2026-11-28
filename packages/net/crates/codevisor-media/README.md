@@ -163,8 +163,10 @@ no jitter buffer and no queue deeper than one frame.
     hide a real loss only if the round trip falls below half its session low; the first keyframe's own queue can
     hold its packets longer than that, so a session's start is the case this covers least.
     Requested packets reach the estimator's loss count, which decides whether the link is dropping packets, only
-    once their frame is answered, and at the time they were requested; late ones never do. A late packet the
-    arrival count had already taken as lost is given back to it. The FEC trigger keeps each frame's requested losses
+    once their frame is answered (its own report, or a later frame's report for a frame given up), dated when they
+    were requested but no earlier than 250 ms before the answer, so a slow answer still lands in the 500 ms the check
+    looks at; late ones never do. A parity-repaired frame counts in the window it was sent in. A late packet the
+    arrival count had already taken as lost is given back to it, unless the count has started again since. The FEC trigger keeps each frame's requested losses
     apart: a frame whose losses were all only late stops keeping FEC on, without touching another frame's. A frame
     stays a loss when its last packet was requested while a tail probe's copy of it was on its way (that copy can
     arrive early, so the packet isn't taken back) or when a repeat had to be sent again. Feedback naming more than

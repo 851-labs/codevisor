@@ -177,8 +177,9 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
-    pub fn on_lost_earlier(&mut self, at: Instant, bytes: usize) {
-        self.lost.insert(at, bytes);
+    pub fn on_lost_earlier(&mut self, now: Instant, at: Instant, bytes: usize) {
+        let latest_counted = now.checked_sub(RECEIVE_WINDOW / 2).map_or(at, |half_a_window_ago| at.max(half_a_window_ago));
+        self.lost.insert(latest_counted, bytes);
     }
 
     #[cfg(test)]
@@ -439,6 +440,18 @@ mod tests {
     const MS: Duration = Duration::from_millis(1);
     const FRAME: Duration = Duration::from_micros(16_667);
     const OFFSET: i64 = 5_000_000;
+
+    #[test]
+    fn a_loss_confirmed_long_after_its_request_still_counts_toward_the_drop_check() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 100e6, FRAME);
+        let answered = start + 2_000 * MS;
+        estimator.on_sent(answered, 1_200);
+
+        estimator.on_lost_earlier(answered, start, 6_000);
+
+        assert_eq!(estimator.lost.bytes_within(answered), 6_000);
+    }
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
         Delivery { bytes, receive_span: span, send_span: Duration::ZERO }
