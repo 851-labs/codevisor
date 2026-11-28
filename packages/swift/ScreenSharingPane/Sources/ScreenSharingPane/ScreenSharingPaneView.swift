@@ -96,11 +96,11 @@
               ForEach(model.displays, id: \.id) { display in
                 Text(display.name).tag(display.id)
               }
-              if !model.unavailableDisplays.isEmpty {
-                Section("Not Available") {
-                  ForEach(model.unavailableDisplays) { display in
-                    Text(display.summary).tag(display.id).disabled(true)
-                  }
+            }
+            if !model.unavailableDisplays.isEmpty {
+              Section("Not Available") {
+                ForEach(model.unavailableDisplays) { display in
+                  Button(display.summary) {}.disabled(true)
                 }
               }
             }

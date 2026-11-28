@@ -88,23 +88,47 @@ private struct ScreenSharingDisplayPicker: View {
 
   var body: some View {
     if store.offersAChoiceOfDisplays {
-      Picker(
-        "Display",
-        selection: Binding(
-          get: { store.selectedDisplayId ?? store.displays.first?.id ?? "" },
-          set: { store.send(.displaySelected($0)) })
-      ) {
-        ForEach(store.displays) { display in Text(display.name).tag(display.id) }
-        if !store.unavailableDisplays.isEmpty {
-          Section("Not Available") {
-            ForEach(store.unavailableDisplays) { display in
-              Text(display.summary).tag(display.id).disabled(true)
-            }
-          }
+      if store.unavailableDisplays.isEmpty {
+        choices.pickerStyle(.menu).fixedSize().help(help)
+      } else {
+        Menu {
+          choices.pickerStyle(.inline)
+          ScreenSharingUnavailableDisplays(displays: store.unavailableDisplays)
+        } label: {
+          Text(selectedName)
         }
+        .fixedSize().help(help)
       }
-      .pickerStyle(.menu).labelsHidden().fixedSize()
-      .help("Switch to another display of this machine")
+    }
+  }
+
+  private let help = "Switch to another display of this machine"
+
+  private var choices: some View {
+    Picker(
+      "Display",
+      selection: Binding(
+        get: { selectedId },
+        set: { store.send(.displaySelected($0)) })
+    ) {
+      ForEach(store.displays) { display in Text(display.name).tag(display.id) }
+    }
+    .labelsHidden()
+  }
+
+  private var selectedId: String { store.selectedDisplayId ?? store.displays.first?.id ?? "" }
+
+  private var selectedName: String { store.displays.first { $0.id == selectedId }?.name ?? "Display" }
+}
+
+private struct ScreenSharingUnavailableDisplays: View {
+  let displays: [ServerScreenSharingUnavailableDisplay]
+
+  var body: some View {
+    Section("Not Available") {
+      ForEach(displays) { display in
+        Button(display.summary) {}.disabled(true)
+      }
     }
   }
 }
