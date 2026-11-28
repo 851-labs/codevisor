@@ -114,8 +114,13 @@ describe("child processes", () => {
   })
 
   it("rejects instead of crashing or hanging when the command cannot start", async () => {
-    await expect(runCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
-    await expect(captureCommand("codevisor-missing-tool", [])).rejects.toThrow(/ENOENT|not found/)
+    const options = { env: { PATH: await scratch() } }
+    await expect(runCommand("codevisor-missing-tool", [], options)).rejects.toThrow(
+      /ENOENT|not found/
+    )
+    await expect(captureCommand("codevisor-missing-tool", [], options)).rejects.toThrow(
+      /ENOENT|not found/
+    )
   })
 
   it("waits on process-like handles that only support once, like a dev container", async () => {
