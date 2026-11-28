@@ -160,8 +160,11 @@ pub struct LateOriginals {
 
 impl LateOriginals {
     pub fn from_indices(indices: impl IntoIterator<Item = u16>) -> Self {
+        let mut sorted: Vec<u16> = indices.into_iter().collect();
+        sorted.sort_unstable();
+        sorted.dedup();
         let mut late = Self::default();
-        for index in indices {
+        for index in sorted {
             let len = usize::from(late.len);
             if let Some((start, count)) = late.ranges[..len].last_mut()
                 && u32::from(*start) + u32::from(*count) == u32::from(index)
@@ -562,6 +565,13 @@ mod tests {
         let decoded = Feedback::decode(short).and_then(|feedback| feedback.receipt).map(|receipt| receipt.late_originals);
 
         assert_eq!(decoded, Some(LateOriginals::default()));
+    }
+
+    #[test]
+    fn late_originals_from_unsorted_repeated_indices_are_the_same_ranges() {
+        let late = LateOriginals::from_indices([5, 3, 4, 4, 9]);
+
+        assert_eq!(late.ranges(), &[(3, 3), (9, 1)]);
     }
 
     #[test]

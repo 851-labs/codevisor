@@ -52,6 +52,14 @@ impl Arrived {
         true
     }
 
+    pub fn give_back(&mut self, position: u64, bytes: u64) {
+        let bytes = bytes.min(self.lost);
+        self.lost -= bytes;
+        for sighting in self.seen.iter_mut().filter(|sighting| sighting.position >= position) {
+            sighting.carried = sighting.carried.saturating_add(bytes);
+        }
+    }
+
     pub fn reached(&self, now: Instant, known_bps: Option<f64>) -> Option<u64> {
         let newest = self.seen.back()?;
         let since = now.saturating_duration_since(newest.at);

@@ -541,7 +541,7 @@ impl Receiver {
                 complete_offset_us: completed.map_or(0, |at| micros(at - first)),
                 original_bytes: assembly.original_bytes.min(u32::MAX as usize) as u32,
                 recovery: assembly.recovery(),
-                late_originals: LateOriginals::from_indices(sorted(&assembly.late_originals)),
+                late_originals: LateOriginals::from_indices(assembly.late_originals.iter().copied()),
             })
         };
         let outcome = match &assembly.state {
@@ -731,11 +731,4 @@ fn deliver(stream: u8, frame: u32, assembly: Assembly, events: &mut VecDeque<Eve
         }
         State::Assembling => unreachable!("only resolved frames are delivered"),
     }
-}
-
-fn sorted(indices: &[u16]) -> Vec<u16> {
-    let mut sorted = indices.to_vec();
-    sorted.sort_unstable();
-    sorted.dedup();
-    sorted
 }

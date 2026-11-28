@@ -177,13 +177,13 @@ impl Estimator {
         self.lost.push(now, bytes);
     }
 
+    pub fn on_lost_earlier(&mut self, at: Instant, bytes: usize) {
+        self.lost.insert(at, bytes);
+    }
+
     #[cfg(test)]
     pub fn lost_bytes(&self) -> usize {
         self.lost.bytes
-    }
-
-    pub fn take_back_lost(&mut self, lost_at: Instant, bytes: usize) {
-        self.lost.take_back(lost_at, bytes);
     }
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
@@ -368,16 +368,10 @@ impl Throughput {
         self.bytes += bytes;
     }
 
-    fn take_back(&mut self, at: Instant, mut bytes: usize) {
-        for (_, entry) in self.entries.iter_mut().rev().filter(|(pushed, _)| *pushed == at) {
-            let taken = bytes.min(*entry);
-            *entry -= taken;
-            self.bytes -= taken;
-            bytes -= taken;
-            if bytes == 0 {
-                break;
-            }
-        }
+    fn insert(&mut self, at: Instant, bytes: usize) {
+        let after = self.entries.iter().rposition(|(pushed, _)| *pushed <= at).map_or(0, |index| index + 1);
+        self.entries.insert(after, (at, bytes));
+        self.bytes += bytes;
     }
 
     fn bps(&self) -> Option<f64> {

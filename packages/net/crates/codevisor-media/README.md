@@ -149,24 +149,27 @@ no jitter buffer and no queue deeper than one frame.
     only the delay detector, local Tier 1 video N5 stalled in 3 of 4 runs, against 0 of 4 with this.
   - **late originals (851-4501):** a request is not a loss when the packet was only late. The viewer notes, per
     frame, the packets it asked for whose first copy arrived within half the session's lowest round trip of the
-    request (too soon for the resend), and reports them with the frame's receipt as up to eight index ranges. The
-    host takes back off the loss window only those it charged as first losses in the current window, so a packet it
-    never charged (not sent yet, or named in a request that was lost) can't cancel a real loss, and a window doesn't
-    pay for another window's take-back. The take-back runs before the window can roll, and when a window ends while a
-    frame whose losses it counted could still answer (one round trip and two frame intervals), it waits up to that
-    long before deciding. On the 50 Mbit/s lab network (25 ms ± 5) a pause in arrivals during a
-    large frame made the viewer ask for 30–170 packets still on their way; the window read 13–32% on a link that lost
-    0.1%, the cut threw the measured rate away and the estimate fell to the next small sample, about 3 Mbit/s, for the
-    rest of the run (16 traced local runs, 5 of 8 collapsed on main). The count only misses late originals (a copy
-    later than that counts as the resend), so it can hide a real loss only if the round trip falls below half its
-    session low. A taken-back packet also comes off the estimator's lost bytes, from the request it was charged
-    with. The FEC trigger keeps each frame's requested losses apart: a frame whose losses were all only late stops
-    keeping FEC on, without touching another frame's. A frame stays a loss when its last packet was requested while
-    a tail probe's copy of it was on its way (that copy can arrive early, so the packet isn't taken back) or when a
-    repeat had to be sent again. A frame resolved by a later frame's report keeps what it was charged, and holds the
-    window, until its own report arrives. Feedback naming more than eight ranges keeps the first eight, and feedback
-    cut short inside them keeps none, rather than being dropped. An older viewer sends no
-    ranges and the host counts as before; an older host ignores the flag and the bytes after it.
+    request (too soon for the resend), and reports them with the frame's receipt as up to eight index ranges. Each
+    frame belongs to the loss window it was sent in: a frame sent after its window's second is up counts, with the
+    losses its requests name, in the next one. The host takes back only what it charged as first losses, from the
+    window it charged them to, so a packet it never charged (not sent yet, or named in a request that was lost)
+    can't cancel a real loss. The take-back runs before the window can roll, and a window that has ended waits for
+    each of its frames whose losses could still be answered (one round trip and two frame intervals after the
+    request, frames already resolved by a later frame's report included), at most until it is 2 s old. On the
+    50 Mbit/s lab network (25 ms ± 5) a pause in arrivals during a large frame made the viewer ask for 30–170 packets
+    still on their way; the window read 13–32% on a link that lost 0.1%, the cut threw the measured rate away and the
+    estimate fell to the next small sample, about 3 Mbit/s, for the rest of the run (16 traced local runs, 5 of 8
+    collapsed on main). The count only misses late originals (a copy later than that counts as the resend), so it can
+    hide a real loss only if the round trip falls below half its session low; the first keyframe's own queue can
+    hold its packets longer than that, so a session's start is the case this covers least.
+    Requested packets reach the estimator's loss count, which decides whether the link is dropping packets, only
+    once their frame is answered, and at the time they were requested; late ones never do. A late packet the
+    arrival count had already taken as lost is given back to it. The FEC trigger keeps each frame's requested losses
+    apart: a frame whose losses were all only late stops keeping FEC on, without touching another frame's. A frame
+    stays a loss when its last packet was requested while a tail probe's copy of it was on its way (that copy can
+    arrive early, so the packet isn't taken back) or when a repeat had to be sent again. Feedback naming more than
+    eight ranges keeps the first eight, and feedback cut short inside them keeps none, rather than being dropped. An
+    older viewer sends no ranges and the host counts as before; an older host ignores the flag and the bytes after it.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
     cleared. When the receive rate is under half the estimate and the viewer received at least 75% of what was sent
