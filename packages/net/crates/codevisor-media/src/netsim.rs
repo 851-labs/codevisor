@@ -165,7 +165,8 @@ impl NetworkModel {
 
     fn released(&self, arrival: Duration) -> Duration {
         let tick_ms = self.conditions.release_tick_ms.filter(|tick_ms| *tick_ms > 0.0);
-        let Some(tick) = tick_ms.map(|tick_ms| Duration::from_secs_f64(tick_ms / 1000.0)).filter(|tick| !tick.is_zero())
+        let tick = tick_ms.and_then(|tick_ms| Duration::try_from_secs_f64(tick_ms / 1000.0).ok());
+        let Some(tick) = tick.filter(|tick| !tick.is_zero())
         else {
             return arrival;
         };
@@ -219,6 +220,15 @@ mod tests {
             [0, 1, 2, 3, 4, 7].into_iter().map(|sent_ms| model.send(1000, Duration::from_millis(sent_ms))).collect();
         let at = |ms| Fate::Delivered(Duration::from_millis(ms));
         assert_eq!(arrivals, vec![at(4), at(4), at(4), at(4), at(8), at(8)]);
+    }
+
+    #[test]
+    fn a_tick_too_large_to_represent_leaves_arrivals_as_they_are() {
+        let conditions =
+            NetworkConditions { id: "test", delay_ms: 1.0, release_tick_ms: Some(f64::INFINITY), ..NetworkConditions::N0 };
+        let mut model = NetworkModel::new(conditions, 1);
+
+        assert_eq!(model.send(1_200, Duration::ZERO), Fate::Delivered(Duration::from_millis(1)));
     }
 
     #[test]

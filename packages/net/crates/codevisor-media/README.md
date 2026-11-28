@@ -28,9 +28,15 @@ no jitter buffer and no queue deeper than one frame.
      time, every millisecond. On N3 with a 4 ms or 10 ms release tick (`netsim`'s N8 and N9) the sim resent 213–457
      packets in 30 s that were still on their way (2–4 without the tick), the host took the requests for 10–20% loss,
      and its estimate fell from about 110 Mbit/s to 11 (N8, 2 seeds of 3) or by a tenth at every large frame (N9).
-     With the 10 s memory it resends 5–10 and the estimate rises as on N3. The price: one long stall inside a
-     frame holds the tail wait at up to the give-up time for 10 s, so a lost tail is asked for that much later; the
-     memory is cleared by the clock, not by the next gap, so it can't outlive those 10 s on a quiet stream. When
+     With the 10 s memory it resends 5–13 and the estimate's low stays at 104–114 Mbit/s, as on N3 (measured after
+     #1510 and #1515, which don't cover this: a clump holds packets longer than half of N3's 2 ms round trip, so
+     they aren't late originals). The prices: one long stall inside a frame holds the tail wait at up to the
+     give-up time for 10 s, so a lost tail is asked for that much later; and on a jittery link without a queue (N3
+     with 1 ms jitter, 6 KB frames) the estimate's low is about 7% lower, 26–29 Mbit/s against 30–31 on main in 5
+     seeds, while its resends drop from 19–45 to 4–7. Main's early requests cut the jitter-delayed packets out of
+     each frame's first-time bytes, which shortened the frame's spread and raised its rate sample; now they count
+     where they arrived. The memory is cleared by the clock, not by the next gap, so it can't outlive those 10 s on
+     a quiet stream. When
      the tail wait passes, the viewer asks only for the packets that should have arrived by then at the frame's own
      pace (from every packet of it that arrived), or at the receiver's recent longest gap before the frame has a
      pace, or just the next packet before any gap is known (at least the next one), and waits again, so a slow link's frame isn't requested whole while it's still
@@ -256,7 +262,7 @@ Transports implement `DatagramTransport`:
 - `QuicTransport` is the product path. It keeps at most 256 KiB queued inside QUIC and hands later datagrams back
   as `SendOutcome::Full`, so the backlog stays in the pacer, where admission sees it.
 - `UdpTransport` is the raw-UDP baseline and fallback.
-- `ImpairedTransport` sends through a seeded `netsim::NetworkModel` (the benchmark's N0–N7) for the bench.
+- `ImpairedTransport` sends through a seeded `netsim::NetworkModel` (the benchmark's N0–N9) for the bench.
 
 `Core` is the same transport as a state machine with no I/O and no clock of its own: feed it datagrams and the time,
 and take datagrams, wake-up times and events out. The deterministic tests drive two of them over `netsim`.
